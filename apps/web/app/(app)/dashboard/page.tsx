@@ -1,10 +1,11 @@
 import type { DependencyStatus } from '@knowguard/types';
-import { CheckCircle2, CircleAlert, CircleX } from 'lucide-react';
+import { CheckCircle2, CircleAlert, CircleX, MailWarning } from 'lucide-react';
 import type { Metadata } from 'next';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { getApiHealth } from '@/lib/api';
+import { requireUser } from '@/lib/session';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 // Health is live data; never prerender it at build time.
@@ -20,7 +21,7 @@ const ROADMAP = [
   { phase: 7, name: 'Search', detail: 'Keyword, vector, hybrid' },
   { phase: 8, name: 'AI', detail: 'Permission-aware RAG with citations' },
 ] as const;
-const CURRENT_PHASE = 1;
+const CURRENT_PHASE = 2;
 
 function StatusRow({ label, status }: { label: string; status: DependencyStatus | 'unreachable' }) {
   const up = status === 'up';
@@ -36,17 +37,65 @@ function StatusRow({ label, status }: { label: string; status: DependencyStatus 
 }
 
 export default async function DashboardPage() {
-  const result = await getApiHealth();
+  const [me, result] = await Promise.all([requireUser(), getApiHealth()]);
 
   return (
     <div className="flex flex-col gap-8">
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Welcome, {me.user.name}</h1>
         <p className="text-sm text-muted-foreground">
           Permission-aware enterprise knowledge. Every answer is built only from documents you are allowed to
           read.
         </p>
       </header>
+
+      {!me.user.emailVerified && (
+        <div
+          role="status"
+          className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm"
+        >
+          <MailWarning className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <p>
+            <span className="font-medium">Your email address is not verified.</span> Some organization
+            actions, such as inviting users and sharing documents, will require a verified email.
+          </p>
+        </div>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Your account</CardTitle>
+          <CardDescription>Resolved server-side from your session.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <dt className="text-muted-foreground">Email</dt>
+              <dd className="truncate font-medium">{me.user.email}</dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Organization</dt>
+              <dd className="font-medium" data-testid="organization-name">
+                {me.organization.name}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Role</dt>
+              <dd className="flex flex-wrap gap-1" data-testid="roles">
+                {me.roles.map((role) => (
+                  <Badge key={role} variant="secondary">
+                    {role}
+                  </Badge>
+                ))}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Permissions</dt>
+              <dd className="font-medium">{me.permissions.length}</dd>
+            </div>
+          </dl>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2">
         <Card>

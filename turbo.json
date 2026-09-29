@@ -24,6 +24,9 @@
     "test:e2e": {
       "dependsOn": ["^build"],
       "cache": false
+    },
+    "@knowguard/database#typecheck": {
+      "dependsOn": ["build"]
     }
   }
 }

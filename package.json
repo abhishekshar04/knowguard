@@ -21,7 +21,9 @@
     "db:migrate": "pnpm --filter @knowguard/database db:migrate",
     "db:deploy": "pnpm --filter @knowguard/database db:deploy",
     "db:seed": "pnpm --filter @knowguard/database db:seed",
-    "db:reset": "pnpm --filter @knowguard/database db:reset"
+    "db:reset": "pnpm --filter @knowguard/database db:reset",
+    "db:test:prepare": "pnpm --filter @knowguard/database db:test:prepare",
+    "test:browser": "pnpm --filter @knowguard/web test:browser"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

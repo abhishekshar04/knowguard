@@ -33,3 +33,36 @@ export const QUEUE_NAMES = {
   ingestion: 'ingestion',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
+
+/**
+ * Returned by register/login to the Next.js BFF only (server-to-server). The BFF moves the
+ * token into an HttpOnly cookie; it is never exposed to browser JavaScript.
+ */
+export interface SessionGrant {
+  token: string;
+  expiresAt: string;
+}
+
+/** GET /auth/me — the authenticated principal and its tenant context. */
+export interface MeResponse {
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    emailVerified: boolean;
+  };
+  organization: {
+    id: string;
+    name: string;
+    slug: string;
+  };
+  /** Role keys in the current organization, for display. Authorization is always server-side. */
+  roles: string[];
+  permissions: string[];
+  session: {
+    expiresAt: string;
+  };
+}
+
+/** Header the BFF uses to forward the end user's user-agent to the API. */
+export const FORWARDED_USER_AGENT_HEADER = 'x-knowguard-user-agent';

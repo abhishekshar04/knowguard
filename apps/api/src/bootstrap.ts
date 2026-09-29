@@ -13,16 +13,21 @@ export const API_PREFIX = 'api/v1';
  */
 export function configureApp(app: INestApplication, env: ApiEnv): void {
   const expressApp = app as NestExpressApplication;
-  expressApp.set('trust proxy', env.NODE_ENV === 'production' ? 1 : false);
+  expressApp.set('trust proxy', parseTrustProxy(env.TRUST_PROXY));
   expressApp.useBodyParser('json', { limit: '1mb' });
 
   app.setGlobalPrefix(API_PREFIX);
   app.use(helmet());
-  app.enableCors({
-    origin: env.WEB_ORIGIN,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  });
+  // No CORS: browsers never call the API directly (they go through the Next.js BFF), so
+  // cross-origin browser requests are refused by default.
   app.useGlobalFilters(new ApiExceptionFilter());
   app.enableShutdownHooks();
+}
+
+/** Maps TRUST_PROXY to Express' setting: "true"/"false", a hop count, or address/subnet list. */
+export function parseTrustProxy(value: string): boolean | number | string {
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (/^\d+$/.test(value)) return Number(value);
+  return value;
 }

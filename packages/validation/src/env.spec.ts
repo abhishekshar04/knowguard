@@ -4,7 +4,6 @@ import { emailSchema, passwordSchema, slugSchema } from './primitives';
 const validApiEnv = {
   DATABASE_URL: 'postgresql://user:s3cret@localhost:5432/db',
   REDIS_URL: 'redis://:s3cret@localhost:6379',
-  WEB_ORIGIN: 'http://localhost:3000, https://app.example.com',
 };
 
 describe('parseEnv', () => {
@@ -12,7 +11,6 @@ describe('parseEnv', () => {
     const env = parseEnv(apiEnvSchema, validApiEnv);
     expect(env.API_PORT).toBe(4000);
     expect(env.NODE_ENV).toBe('development');
-    expect(env.WEB_ORIGIN).toEqual(['http://localhost:3000', 'https://app.example.com']);
   });
 
   it('rejects missing required variables', () => {

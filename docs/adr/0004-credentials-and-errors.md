@@ -1,6 +1,6 @@
 # ADR 0004 — Credentials, secrets and API errors
 
-**Status:** Accepted (Phase 1). The session design below is proposed and will be finalised in Phase 2.
+**Status:** Accepted (Phase 1; sessions implemented in Phase 2).
 
 ## Passwords
 
@@ -9,9 +9,9 @@
 - `users.password_hash` is nullable, for invited users and future SSO-only accounts.
 - Password policy is length-based (12–128 characters, per NIST 800-63B). The upper bound limits the hashing cost of hostile input.
 
-## Sessions (proposed for Phase 2)
+## Sessions
 
-Opaque random session tokens in an `HttpOnly; Secure; SameSite=Lax` cookie, stored **hashed** in a `sessions` table with expiry and revocation. We prefer this to stateless JWTs because suspension, deactivation and logout must take effect immediately. The auth package keeps the credential verifier separate from session issuance, so Google/Microsoft OAuth and SAML/OIDC SSO can be added as further verifiers.
+Implemented in Phase 2 — see [ADR 0005](0005-identity-membership-and-sessions.md). Opaque random session tokens in an `HttpOnly; Secure; SameSite=Lax` cookie, stored **hashed** in a `sessions` table with expiry and revocation. We prefer this to stateless JWTs because suspension, deactivation and logout must take effect immediately. The auth package keeps the credential verifier separate from session issuance, so Google/Microsoft OAuth and SAML/OIDC SSO can be added as further verifiers.
 
 ## Secrets and logging
 

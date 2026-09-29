@@ -9,7 +9,7 @@ import { hashPassword } from '@knowguard/auth';
 import type { SystemRoleKey } from '@knowguard/authorization';
 
 import { createPrismaClient } from '../src/client';
-import { provisionSystemRoles } from '../src/provisioning';
+import { provisionSystemRoles, syncPermissionCatalog } from '../src/provisioning';
 
 const ORGANIZATION = { name: 'Acme Corporation', slug: 'acme' };
 
@@ -39,6 +39,7 @@ async function main(): Promise<void> {
           create: ORGANIZATION,
           update: { name: ORGANIZATION.name },
         });
+        await syncPermissionCatalog(tx);
         const roleIds = await provisionSystemRoles(tx, organization.id);
 
         for (const seedUser of USERS) {
@@ -46,17 +47,23 @@ async function main(): Promise<void> {
             where: { email: seedUser.email },
             // Existing users keep their password so re-seeding doesn't clobber local changes.
             create: {
-              organizationId: organization.id,
               email: seedUser.email,
               name: seedUser.name,
               passwordHash,
               status: 'ACTIVE',
+              emailVerifiedAt: new Date(),
             },
             update: { name: seedUser.name, status: 'ACTIVE' },
           });
-          if (user.organizationId !== organization.id) {
-            throw new Error(`Seed user ${seedUser.email} already exists in another organization`);
+          const existing = await tx.userOrganization.findUnique({ where: { userId: user.id } });
+          if (existing && existing.organizationId !== organization.id) {
+            throw new Error(`Seed user ${seedUser.email} already belongs to another organization`);
           }
+          await tx.userOrganization.upsert({
+            where: { userId_organizationId: { userId: user.id, organizationId: organization.id } },
+            create: { userId: user.id, organizationId: organization.id, status: 'ACTIVE' },
+            update: { status: 'ACTIVE' },
+          });
           await tx.userRole.upsert({
             where: { userId_roleId: { userId: user.id, roleId: roleIds[seedUser.role] } },
             create: { organizationId: organization.id, userId: user.id, roleId: roleIds[seedUser.role] },
@@ -85,6 +92,7 @@ async function main(): Promise<void> {
     const counts = {
       organizations: await prisma.organization.count(),
       users: await prisma.user.count(),
+      memberships: await prisma.userOrganization.count(),
       roles: await prisma.role.count(),
       permissions: await prisma.permission.count(),
       rolePermissions: await prisma.rolePermission.count(),

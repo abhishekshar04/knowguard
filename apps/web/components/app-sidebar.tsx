@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 
 import { ADMIN_NAV, BRAND_ICON as Brand, MAIN_NAV, type NavItem } from './navigation';
+import { SignOutButton } from './sign-out-button';
 
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   const Icon = item.icon;
@@ -48,18 +49,48 @@ function NavSection({ title, items, pathname }: { title?: string; items: NavItem
   );
 }
 
-export function AppSidebar() {
+interface AppSidebarProps {
+  user: { name: string; email: string };
+  organizationName: string;
+}
+
+export function AppSidebar({ user, organizationName }: AppSidebarProps) {
   const pathname = usePathname();
   return (
-    <aside className="hidden w-60 shrink-0 flex-col gap-6 border-r bg-sidebar p-3 text-sidebar-foreground md:flex">
-      <Link href="/dashboard" className="flex items-center gap-2 px-2.5 pt-1 font-semibold">
-        <Brand className="size-5" aria-hidden />
-        KnowGuard
+    <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col gap-6 border-r bg-sidebar p-3 text-sidebar-foreground md:flex">
+      <Link href="/dashboard" className="flex flex-col gap-0.5 px-2.5 pt-1">
+        <span className="flex items-center gap-2 font-semibold">
+          <Brand className="size-5" aria-hidden />
+          KnowGuard
+        </span>
+        <span className="truncate text-xs text-muted-foreground" data-testid="sidebar-organization">
+          {organizationName}
+        </span>
       </Link>
-      <nav aria-label="Main" className="flex flex-col gap-6">
+      <nav aria-label="Main" className="flex flex-1 flex-col gap-6 overflow-y-auto">
         <NavSection items={MAIN_NAV} pathname={pathname} />
         <NavSection title="Admin" items={ADMIN_NAV} pathname={pathname} />
       </nav>
+      <div className="flex flex-col gap-2 border-t pt-3">
+        <div className="min-w-0 px-2.5">
+          <p className="truncate text-sm font-medium">{user.name}</p>
+          <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+        </div>
+        <SignOutButton className="justify-start" />
+      </div>
     </aside>
+  );
+}
+
+/** Top bar for small screens, where the sidebar is hidden. */
+export function MobileHeader({ organizationName }: { organizationName: string }) {
+  return (
+    <header className="flex items-center justify-between gap-3 border-b px-4 py-2 md:hidden">
+      <span className="flex min-w-0 items-center gap-2 font-semibold">
+        <Brand className="size-5 shrink-0" aria-hidden />
+        <span className="truncate">{organizationName}</span>
+      </span>
+      <SignOutButton />
+    </header>
   );
 }

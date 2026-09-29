@@ -6,7 +6,18 @@ Permission-aware enterprise knowledge platform. The core invariant:
 
 Authorization happens **before** retrieval and context construction — never by asking an LLM to withhold information.
 
-**Status: Phase 1 (foundation).** Monorepo, API, worker, web, database schema for tenancy and RBAC, seed data, health checks. There is no authentication, documents or AI yet.
+**Status: Phase 2 (authentication).** Self-serve registration (creates an organization with you as OWNER), login, logout, server-side revocable sessions, a Next.js BFF with HttpOnly cookies, rate limiting, and CI. Documents, search and AI come later.
+
+## How authentication works
+
+```text
+Browser ──HttpOnly cookie──▶ Next.js BFF (server actions) ──Bearer token──▶ NestJS API ──▶ PostgreSQL / Redis
+```
+
+- The browser only talks to Next.js. The API has no CORS and ignores cookies.
+- The session token lives in an HttpOnly, SameSite=Lax cookie (`__Host-kg_session` in production). The database stores only its SHA-256 hash.
+- Every API route requires a session unless it is marked `@Public()`. Each request re-checks revocation, expiry, idle timeout, and suspension of both the account and the membership.
+- Details, limits and the production deployment requirement are in [ADR 0005](docs/adr/0005-identity-membership-and-sessions.md).
 
 ## Layout
 
@@ -18,14 +29,15 @@ apps/
 packages/
   database/   Prisma schema, migrations, seed, client, tenant provisioning
   authorization/  Permission catalog + system roles (policy engine lands in Phase 4)
-  auth/       Password hashing (argon2id); sessions/OAuth later
-  validation/ zod env schemas + input primitives
+  auth/       Password hashing (argon2id), session tokens; OAuth/SSO later
+  validation/ zod env + request schemas (shared by API and BFF)
   logger/     pino with secret redaction
   types/      Shared API contract types (browser-safe)
   storage/    Object storage interface (Phase 5)
   ai/         AI provider interfaces (Phase 6/8)
 docs/adr/     Architecture decision records
 docker/       Postgres init scripts
+.github/      CI workflow (lint, typecheck, unit, integration, e2e, browser tests)
 ```
 
 ## Prerequisites
@@ -45,43 +57,45 @@ pnpm db:seed                  # Acme org, owner/admin/employee, roles, permissio
 pnpm dev                      # api + worker + web in watch mode
 ```
 
-Then open http://localhost:3000 (dashboard) or `curl http://localhost:4000/api/v1/health`.
-
-Seeded users (password = `SEED_USER_PASSWORD` from `.env`): `owner@acme.example`, `admin@acme.example`, `employee@acme.example`.
+Then open http://localhost:3000. You can create a new organization at `/register`, or sign in as a seeded user: `owner@acme.example`, `admin@acme.example` or `employee@acme.example`, with the password `SEED_USER_PASSWORD` from `.env`.
 
 ## Commands
 
-| Command                                              | What it does                                                         |
-| ---------------------------------------------------- | -------------------------------------------------------------------- |
-| `pnpm dev`                                           | Run api, worker and web in watch mode                                |
-| `pnpm build`                                         | Build everything (dependency-ordered by Turborepo)                   |
-| `pnpm typecheck` / `pnpm lint` / `pnpm format:check` | Static checks                                                        |
-| `pnpm test`                                          | Unit tests (no infrastructure needed)                                |
-| `pnpm --filter @knowguard/database db:test:prepare`  | Apply migrations to the test database                                |
-| `pnpm test:e2e`                                      | Integration + e2e tests against Postgres/Redis (`TEST_DATABASE_URL`) |
-| `pnpm db:migrate --name <name>`                      | Create and apply a new migration (dev)                               |
-| `pnpm db:deploy`                                     | Apply pending migrations (CI/prod)                                   |
-| `pnpm db:seed`                                       | Idempotent development seed                                          |
-| `pnpm infra:up` / `pnpm infra:down`                  | Start/stop Docker infrastructure                                     |
+| Command                                              | What it does                                                            |
+| ---------------------------------------------------- | ----------------------------------------------------------------------- |
+| `pnpm dev`                                           | Run api, worker and web in watch mode                                   |
+| `pnpm build`                                         | Build everything (dependency-ordered by Turborepo)                      |
+| `pnpm typecheck` / `pnpm lint` / `pnpm format:check` | Static checks                                                           |
+| `pnpm test`                                          | Unit tests (no infrastructure needed)                                   |
+| `pnpm db:test:prepare`                               | Apply migrations to the test database                                   |
+| `pnpm test:e2e`                                      | Integration + e2e tests against Postgres/Redis (`TEST_DATABASE_URL`)    |
+| `pnpm test:browser`                                  | Playwright browser tests (run `pnpm build` first; uses ports 3100/4100) |
+| `pnpm db:migrate --name <name>`                      | Create and apply a new migration (dev)                                  |
+| `pnpm db:deploy`                                     | Apply pending migrations (CI/prod)                                      |
+| `pnpm db:seed`                                       | Idempotent development seed                                             |
+| `pnpm infra:up` / `pnpm infra:down`                  | Start/stop Docker infrastructure                                        |
 
 ## Environment variables
 
 All configuration lives in the repo-root `.env` (template: [.env.example](.env.example)). Apps validate their environment at startup with zod and refuse to boot on invalid config; error messages name the variable but never echo its value.
 
-| Variable                                                             | Used by                | Purpose                                           |
-| -------------------------------------------------------------------- | ---------------------- | ------------------------------------------------- |
-| `NODE_ENV`                                                           | all                    | `development` \| `test` \| `production`           |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` | docker compose         | Postgres container                                |
-| `DATABASE_URL`                                                       | api, database          | Postgres connection string                        |
-| `TEST_DATABASE_URL`                                                  | tests                  | Separate test database (name must contain `test`) |
-| `REDIS_PORT`, `REDIS_PASSWORD`                                       | docker compose         | Redis container (password required)               |
-| `REDIS_URL`                                                          | api, worker            | Redis connection string                           |
-| `API_PORT`                                                           | api                    | HTTP port (default 4000)                          |
-| `WEB_ORIGIN`                                                         | api                    | Comma-separated CORS allowlist                    |
-| `LOG_LEVEL`                                                          | api, worker            | pino level                                        |
-| `WORKER_CONCURRENCY`                                                 | worker                 | Parallel jobs (default 4)                         |
-| `API_URL`                                                            | web (server-side only) | Base URL of the API                               |
-| `SEED_USER_PASSWORD`                                                 | seed                   | Password for seeded demo users (≥ 12 chars)       |
+| Variable                                                             | Used by                | Purpose                                                        |
+| -------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------- |
+| `NODE_ENV`                                                           | all                    | `development` \| `test` \| `production`                        |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` | docker compose         | Postgres container                                             |
+| `DATABASE_URL`                                                       | api, database          | Postgres connection string                                     |
+| `TEST_DATABASE_URL`                                                  | tests                  | Separate test database (name must contain `test`)              |
+| `REDIS_PORT`, `REDIS_PASSWORD`                                       | docker compose         | Redis container (password required)                            |
+| `REDIS_URL`                                                          | api, worker            | Redis connection string                                        |
+| `API_PORT`                                                           | api                    | HTTP port (default 4000)                                       |
+| `SESSION_TTL_HOURS`                                                  | api                    | Absolute session lifetime (default 168)                        |
+| `SESSION_IDLE_TIMEOUT_MINUTES`                                       | api                    | Idle session expiry (default 1440)                             |
+| `TRUST_PROXY`                                                        | api                    | Hops trusted to set X-Forwarded-For (see ADR 0005)             |
+| `LOG_LEVEL`                                                          | api, worker            | pino level                                                     |
+| `WORKER_CONCURRENCY`                                                 | worker                 | Parallel jobs (default 4)                                      |
+| `API_URL`                                                            | web (server-side only) | Base URL of the API                                            |
+| `SESSION_COOKIE_SECURE`                                              | web                    | Force the Secure cookie flag on/off (default: production only) |
+| `SEED_USER_PASSWORD`                                                 | seed                   | Password for seeded demo users (≥ 12 chars)                    |
 
 ## Architecture decisions
 
@@ -91,3 +105,8 @@ See [docs/adr](docs/adr):
 2. [Pinned framework versions](docs/adr/0002-framework-versions.md)
 3. [Tenant isolation enforced in the schema](docs/adr/0003-tenant-isolation-in-schema.md)
 4. [Credentials and API error handling](docs/adr/0004-credentials-and-errors.md)
+5. [Identity, membership, sessions and the BFF](docs/adr/0005-identity-membership-and-sessions.md)
+
+## Deploying: required
+
+The web app must sit behind a reverse proxy or load balancer that sets or appends `X-Forwarded-For`, and the API's `TRUST_PROXY` must name the BFF. Otherwise per-IP rate limits can be evaded by spoofing that header. See ADR 0005.

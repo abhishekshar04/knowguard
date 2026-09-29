@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "build": "prisma generate && tsc -p tsconfig.build.json",
-    "typecheck": "prisma generate && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint src prisma scripts test prisma.config.ts",
     "db:generate": "prisma generate",
     "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",

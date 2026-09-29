@@ -9,7 +9,7 @@ import {
 import type { ApiErrorBody } from '@knowguard/types';
 import type { Response } from 'express';
 
-import { ApiException } from './api-exception';
+import { ApiException, RateLimitedException } from './api-exception';
 
 const DEFAULT_CODES: Partial<Record<number, { code: string; message: string }>> = {
   [HttpStatus.BAD_REQUEST]: { code: 'BAD_REQUEST', message: 'The request is invalid.' },
@@ -44,6 +44,9 @@ export class ApiExceptionFilter implements ExceptionFilter {
         exception instanceof Error ? (exception.stack ?? exception.message) : String(exception),
       );
     }
+    if (exception instanceof RateLimitedException) {
+      response.setHeader('Retry-After', String(exception.retryAfterSeconds));
+    }
     response.status(status).json(body);
   }
 
@@ -51,7 +54,13 @@ export class ApiExceptionFilter implements ExceptionFilter {
     if (exception instanceof ApiException) {
       return {
         status: exception.getStatus(),
-        body: { error: { code: exception.code, message: exception.message } },
+        body: {
+          error: {
+            code: exception.code,
+            message: exception.message,
+            ...(exception.details ? { details: exception.details } : {}),
+          },
+        },
       };
     }
     const status = exception instanceof HttpException ? exception.getStatus() : clientErrorStatus(exception);

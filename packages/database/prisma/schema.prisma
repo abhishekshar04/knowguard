@@ -5,7 +5,11 @@
 //  * Tenant-owned tables expose a composite unique key (id, organization_id).
 //  * Relationships between tenant-owned rows use COMPOSITE foreign keys that include
 //    organization_id, so PostgreSQL itself rejects links across organizations
-//    (e.g. assigning Org A's role to Org B's user), independent of application code.
+//    (e.g. assigning Org A's role to Org B's member), independent of application code.
+//  * Users are global identities. A user's presence in a tenant is a UserOrganization
+//    membership; everything tenant-scoped about a user (roles, departments, teams,
+//    sessions) references the MEMBERSHIP (user_id, organization_id), never the bare user.
+//    See docs/adr/0005-identity-membership-and-sessions.md.
 
 generator client {
   provider = "prisma-client-js"
@@ -16,11 +20,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// Account-level status of the identity (applies across all organizations).
 enum UserStatus {
   ACTIVE
   INVITED
   SUSPENDED
   DEACTIVATED
+}
+
+/// Status of a user's membership in one organization.
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
 }
 
 model Organization {
@@ -30,7 +42,7 @@ model Organization {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  users       User[]
+  memberships UserOrganization[]
   departments Department[]
   teams       Team[]
   roles       Role[]
@@ -39,25 +51,71 @@ model Organization {
 }
 
 model User {
-  id             String     @id @default(uuid(7)) @db.Uuid
-  organizationId String     @map("organization_id") @db.Uuid
-  /// Stored lower-cased. Globally unique so login can resolve the tenant from the email.
-  email          String     @unique @db.VarChar(320)
-  name           String     @db.VarChar(200)
+  id              String     @id @default(uuid(7)) @db.Uuid
+  /// Stored lower-cased. Globally unique (MVP): login identifies the account from the email.
+  email           String     @unique @db.VarChar(320)
+  name            String     @db.VarChar(200)
   /// Argon2id hash. Null for invited users who have not set a password, and for future SSO-only users.
-  passwordHash   String?    @map("password_hash") @db.Text
-  status         UserStatus @default(INVITED)
-  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  passwordHash    String?    @map("password_hash") @db.Text
+  status          UserStatus @default(INVITED)
+  emailVerifiedAt DateTime?  @map("email_verified_at") @db.Timestamptz(3)
+  lastLoginAt     DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  memberships UserOrganization[]
+  sessions    Session[]
+
+  @@map("users")
+}
+
+/// A user's membership in an organization. The (user_id, organization_id) pair is the
+/// anchor for every tenant-scoped relation of a user.
+model UserOrganization {
+  userId         String           @map("user_id") @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  status         MembershipStatus @default(ACTIVE)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
   roles                 UserRole[]
   departmentMemberships DepartmentMembership[]
   teamMemberships       TeamMembership[]
+  sessions              Session[]
 
-  @@unique([id, organizationId])
+  @@id([userId, organizationId])
+  /// MVP: one organization per user. Drop this index to allow multi-organization users.
+  @@unique([userId], map: "user_organizations_single_org_per_user_key")
   @@index([organizationId, status])
-  @@map("users")
+  @@map("user_organizations")
+}
+
+/// Server-side session. The browser holds a random token; only its SHA-256 hash is stored.
+/// A session is bound to one membership, which is the request's tenant context.
+model Session {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  /// SHA-256 (hex) of the session token. The token itself is never stored.
+  tokenHash      String    @unique @map("token_hash") @db.Char(64)
+  userId         String    @map("user_id") @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt     DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  /// Absolute expiry; idle expiry is derived from last_seen_at.
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedReason  String?   @map("revoked_reason") @db.VarChar(64)
+  ipAddress      String?   @map("ip_address") @db.VarChar(45)
+  userAgent      String?   @map("user_agent") @db.VarChar(512)
+
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  membership UserOrganization @relation(fields: [userId, organizationId], references: [userId, organizationId], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("sessions")
 }
 
 model Department {
@@ -103,8 +161,8 @@ model DepartmentMembership {
   userId         String   @map("user_id") @db.Uuid
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  department Department @relation(fields: [departmentId, organizationId], references: [id, organizationId], onDelete: Cascade)
-  user       User       @relation(fields: [userId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  department Department       @relation(fields: [departmentId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  membership UserOrganization @relation(fields: [userId, organizationId], references: [userId, organizationId], onDelete: Cascade)
 
   @@id([departmentId, userId])
   @@index([userId])
@@ -118,8 +176,8 @@ model TeamMembership {
   userId         String   @map("user_id") @db.Uuid
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  team Team @relation(fields: [teamId, organizationId], references: [id, organizationId], onDelete: Cascade)
-  user User @relation(fields: [userId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  team       Team             @relation(fields: [teamId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  membership UserOrganization @relation(fields: [userId, organizationId], references: [userId, organizationId], onDelete: Cascade)
 
   @@id([teamId, userId])
   @@index([userId])
@@ -149,7 +207,7 @@ model Role {
   @@map("roles")
 }
 
-/// Global permission catalog (not tenant-owned). Seeded from @knowguard/authorization.
+/// Global permission catalog (not tenant-owned). Synced from @knowguard/authorization.
 model Permission {
   id          String   @id @default(uuid(7)) @db.Uuid
   /// "resource.action", e.g. "document.read".
@@ -181,9 +239,9 @@ model UserRole {
   roleId         String   @map("role_id") @db.Uuid
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  /// Both composite FKs share organization_id: user and role must be in the same tenant.
-  user User @relation(fields: [userId, organizationId], references: [id, organizationId], onDelete: Cascade)
-  role Role @relation(fields: [roleId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  /// Both composite FKs share organization_id: the member and the role must be in the same tenant.
+  membership UserOrganization @relation(fields: [userId, organizationId], references: [userId, organizationId], onDelete: Cascade)
+  role       Role             @relation(fields: [roleId, organizationId], references: [id, organizationId], onDelete: Restrict)
 
   @@id([userId, roleId])
   @@index([roleId])

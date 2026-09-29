@@ -1,28 +1,14 @@
-import 'reflect-metadata';
-
 import type { HealthResponse } from '@knowguard/types';
-import { apiEnvSchema, parseEnv } from '@knowguard/validation';
 import type { INestApplication } from '@nestjs/common';
-import { Test } from '@nestjs/testing';
 import request from 'supertest';
 
-import { AppModule } from '../src/app.module';
-import { configureApp } from '../src/bootstrap';
+import { createTestApp } from './test-app';
 
 describe('API (e2e)', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    const env = parseEnv(apiEnvSchema, {
-      ...process.env,
-      NODE_ENV: 'test',
-      DATABASE_URL: process.env.TEST_DATABASE_URL,
-      WEB_ORIGIN: 'http://localhost:3000',
-    });
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule.forRoot(env)] }).compile();
-    app = moduleRef.createNestApplication({ bodyParser: false, logger: false });
-    configureApp(app, env);
-    await app.init();
+    ({ app } = await createTestApp());
   });
 
   afterAll(async () => {
@@ -45,19 +31,22 @@ describe('API (e2e)', () => {
     });
   });
 
-  describe('CORS', () => {
-    it('allows the configured web origin', async () => {
-      const res = await request(app.getHttpServer())
-        .get('/api/v1/health')
-        .set('Origin', 'http://localhost:3000');
-      expect(res.headers['access-control-allow-origin']).toBe('http://localhost:3000');
-      expect(res.headers['access-control-allow-credentials']).toBe('true');
-    });
+  describe('CORS (API is not browser-facing; the Next.js BFF is its only client)', () => {
+    it.each(['http://localhost:3000', 'https://evil.example'])(
+      'grants no cross-origin access to %s',
+      async (origin) => {
+        const res = await request(app.getHttpServer()).get('/api/v1/health').set('Origin', origin);
+        expect(res.headers['access-control-allow-origin']).toBeUndefined();
+        expect(res.headers['access-control-allow-credentials']).toBeUndefined();
+      },
+    );
 
-    it('does not allow other origins', async () => {
+    it('does not answer credentialed preflight requests', async () => {
       const res = await request(app.getHttpServer())
-        .get('/api/v1/health')
-        .set('Origin', 'https://evil.example');
+        .options('/api/v1/auth/me')
+        .set('Origin', 'https://evil.example')
+        .set('Access-Control-Request-Method', 'GET')
+        .set('Access-Control-Request-Headers', 'authorization');
       expect(res.headers['access-control-allow-origin']).toBeUndefined();
     });
   });

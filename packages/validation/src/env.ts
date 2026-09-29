@@ -16,16 +16,26 @@ export const apiEnvSchema = z.object({
   API_PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   DATABASE_URL: postgresUrl,
   REDIS_URL: redisUrl,
-  WEB_ORIGIN: z
-    .string()
+  /** Absolute session lifetime. */
+  SESSION_TTL_HOURS: z.coerce
+    .number()
+    .int()
     .min(1)
-    .transform((value) =>
-      value
-        .split(',')
-        .map((origin) => origin.trim())
-        .filter(Boolean),
-    )
-    .pipe(z.array(z.url()).min(1)),
+    .max(24 * 90)
+    .default(168),
+  /** Sessions unused for this long expire even before the absolute lifetime. */
+  SESSION_IDLE_TIMEOUT_MINUTES: z.coerce
+    .number()
+    .int()
+    .min(5)
+    .max(60 * 24 * 30)
+    .default(60 * 24),
+  /**
+   * Which upstream hops may set X-Forwarded-For (Express "trust proxy"). The Next.js BFF
+   * is the only intended caller; "loopback" fits local development. In production set it
+   * to the BFF's address/subnet so clients cannot spoof their IP for rate limiting.
+   */
+  TRUST_PROXY: z.string().min(1).default('loopback'),
 });
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
 
