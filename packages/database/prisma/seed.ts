@@ -55,6 +55,12 @@ async function main(): Promise<void> {
             },
             update: { name: seedUser.name, status: 'ACTIVE' },
           });
+          // Demo users are verified. Set it here too (not only on create) so users seeded before
+          // email verification existed are backfilled — without overwriting an existing timestamp.
+          await tx.user.updateMany({
+            where: { id: user.id, emailVerifiedAt: null },
+            data: { emailVerifiedAt: new Date() },
+          });
           const existing = await tx.userOrganization.findUnique({ where: { userId: user.id } });
           if (existing && existing.organizationId !== organization.id) {
             throw new Error(`Seed user ${seedUser.email} already belongs to another organization`);

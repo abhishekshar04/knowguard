@@ -27,8 +27,6 @@ interface StoredUser {
 function setup(user: StoredUser | null) {
   const rateLimiter = {
     consume: jest.fn().mockResolvedValue(undefined),
-    assertBelow: jest.fn().mockResolvedValue(undefined),
-    record: jest.fn().mockResolvedValue(undefined),
     reset: jest.fn().mockResolvedValue(undefined),
   };
   const tx = { user: { update: jest.fn() } };
@@ -76,7 +74,7 @@ beforeAll(async () => {
 beforeEach(() => verifyPassword.mockClear());
 
 describe('AuthService.login', () => {
-  it('issues a session for valid credentials and clears the failure counter', async () => {
+  it('issues a session for valid credentials and clears the attempt counter', async () => {
     const { service, sessions, rateLimiter } = setup(activeUser());
     await service.onModuleInit();
     await expect(service.login({ email: 'a@b.co', password: PASSWORD }, meta)).resolves.toHaveProperty(
@@ -107,7 +105,7 @@ describe('AuthService.login', () => {
       status: 401,
       message: 'Invalid email or password.',
     });
-    expect(rateLimiter.record).toHaveBeenCalledTimes(1);
+    expect(rateLimiter.reset).not.toHaveBeenCalled();
     expect(sessions.issue).not.toHaveBeenCalled();
   });
 
@@ -121,13 +119,29 @@ describe('AuthService.login', () => {
     },
   );
 
-  it('checks the IP and per-email limits before touching credentials', async () => {
+  it('counts the attempt against IP and email limits BEFORE verifying the password', async () => {
     const { service, rateLimiter } = setup(activeUser());
     await service.onModuleInit();
-    rateLimiter.assertBelow.mockRejectedValue(new ApiException('RATE_LIMITED', 'x', 429));
+    const order: string[] = [];
+    rateLimiter.consume.mockImplementation(async (key: string) => {
+      order.push(key.startsWith('login:ip:') ? 'ip' : 'email');
+    });
+    verifyPassword.mockImplementationOnce(async () => {
+      order.push('verify');
+      return true;
+    });
+    await service.login({ email: 'a@b.co', password: PASSWORD }, meta);
+    expect(order).toEqual(['ip', 'email', 'verify']);
+  });
+
+  it('stops before touching credentials once the email is locked', async () => {
+    const { service, rateLimiter } = setup(activeUser());
+    await service.onModuleInit();
+    rateLimiter.consume.mockImplementation(async (key: string) => {
+      if (key.startsWith('login:email:')) throw new ApiException('RATE_LIMITED', 'x', 429);
+    });
     const failure = await failureOf(service.login({ email: 'a@b.co', password: PASSWORD }, meta));
     expect(failure.code).toBe('RATE_LIMITED');
-    expect(rateLimiter.consume).toHaveBeenCalledWith('login:ip:203.0.113.7', expect.anything());
     expect(verifyPassword).not.toHaveBeenCalled();
   });
 
@@ -135,9 +149,8 @@ describe('AuthService.login', () => {
     const { service, rateLimiter } = setup(null);
     await service.onModuleInit();
     await failureOf(service.login({ email: 'secret.person@b.co', password: 'x' }, meta));
-    const keys = [...rateLimiter.assertBelow.mock.calls, ...rateLimiter.record.mock.calls].map(
-      (call) => call[0],
-    );
+    const keys = [...rateLimiter.consume.mock.calls, ...rateLimiter.reset.mock.calls].map((call) => call[0]);
+    expect(keys.length).toBeGreaterThan(0);
     for (const key of keys) expect(key).not.toContain('secret.person');
   });
 });

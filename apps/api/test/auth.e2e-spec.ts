@@ -201,6 +201,24 @@ describe('POST /auth/login', () => {
     expect(Number(locked.headers['retry-after'])).toBeGreaterThan(0);
   });
 
+  it('cannot be overshot by concurrent guesses (attempts are counted atomically)', async () => {
+    const { email } = await register();
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, i) => login(email, `parallel guess ${i}`)),
+    );
+    const statuses = results.map((res) => res.status).sort();
+    expect(statuses.filter((s) => s === 401)).toHaveLength(10);
+    expect(statuses.filter((s) => s === 429)).toHaveLength(10);
+  });
+
+  it('a successful login resets the per-email attempt counter', async () => {
+    const { email } = await register();
+    for (let i = 0; i < 9; i++) await login(email, `typo ${i}`).expect(401);
+    await login(email, PASSWORD).expect(200);
+    for (let i = 0; i < 9; i++) await login(email, `typo again ${i}`).expect(401);
+    await login(email, PASSWORD).expect(200);
+  });
+
   it('locks unknown emails exactly like known ones (no enumeration via lockout)', async () => {
     const ghost = uniqueEmail('ghost');
     for (let i = 0; i < 10; i++) await login(ghost, `wrong password ${i}`).expect(401);

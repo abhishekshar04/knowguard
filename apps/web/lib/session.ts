@@ -28,11 +28,31 @@ export const getCurrentUser = cache(async (): Promise<MeResponse | null> => {
   }
 });
 
-/** Use in every protected layout/page. Redirects to /login when there is no valid session. */
+/** Where a stale cookie (revoked/expired session) is cleared before going to /login. */
+export const SESSION_ENDED_PATH = '/auth/session-ended';
+
+/**
+ * Use in every protected layout/page. Redirects to /login when there is no valid session —
+ * via SESSION_ENDED_PATH when a cookie is present but dead, so the browser drops it instead of
+ * re-sending it (and costing an API round-trip) on every later visit.
+ */
 export async function requireUser(): Promise<MeResponse> {
   const user = await getCurrentUser();
-  if (!user) redirect('/login');
-  return user;
+  if (user) return user;
+  redirect((await getSessionToken()) ? SESSION_ENDED_PATH : '/login');
+}
+
+/**
+ * For public pages (sign-in, registration) that only want to bounce signed-in users.
+ * Never throws: if the API is unreachable, the page still renders so the user sees a form
+ * and a useful error on submit, rather than a crash.
+ */
+export async function getCurrentUserIfAvailable(): Promise<MeResponse | null> {
+  try {
+    return await getCurrentUser();
+  } catch {
+    return null;
+  }
 }
 
 /** Only same-origin relative paths are allowed as post-login destinations (no open redirect). */

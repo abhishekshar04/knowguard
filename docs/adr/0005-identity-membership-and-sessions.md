@@ -38,18 +38,21 @@ Registration necessarily reveals when an email is already taken (`409 EMAIL_UNAV
   - `kg_session` without `Secure` in local HTTP development (`SESSION_COOKIE_SECURE` overrides).
 - **CSRF:** Next.js server actions reject cross-origin requests (Origin must match Host). `SameSite=Lax` stops the cookie from being sent on cross-site POSTs. Sign-out is a POST form, not a link.
 - **Authoritative checks:** protected layouts and pages call `requireUser()`, which asks the API (`GET /auth/me`). `proxy.ts` only makes an optimistic redirect when there is no cookie and is not a security boundary.
+- **Stale cookies:** when the API rejects a session, `requireUser()` sends the browser through `/auth/session-ended`, which clears the cookie and continues to `/login`. It clears only after the API confirms the session is invalid, so a cross-site link to it can't log out a valid session. If the API is unreachable, the cookie is kept.
+- **API outages:** the sign-in and registration pages still render when the API is down, and submitting shows "temporarily unavailable" instead of an error page.
 - Post-login redirects accept only same-origin relative paths, which prevents open redirects.
 
 ## Rate limiting and brute force
 
 Fixed-window counters in Redis (`RateLimiterService`), shared by all API instances:
 
-| Limit                                    | Key                          | Default                                        |
-| ---------------------------------------- | ---------------------------- | ---------------------------------------------- |
-| Login attempts per client IP             | `login:ip:<ip>`              | 30 / 15 min                                    |
-| **Failed** logins per email, from any IP | `login:fail:<sha256(email)>` | 10 / 15 min, then locked until the window ends |
-| Registrations per client IP              | `register:ip:<ip>`           | 5 / hour                                       |
+| Limit                                                                 | Key                           | Default                                        |
+| --------------------------------------------------------------------- | ----------------------------- | ---------------------------------------------- |
+| Login attempts per client IP                                          | `login:ip:<ip>`               | 30 / 15 min                                    |
+| Login attempts per email since its last successful login, from any IP | `login:email:<sha256(email)>` | 10 / 15 min, then locked until the window ends |
+| Registrations per client IP                                           | `register:ip:<ip>`            | 5 / hour                                       |
 
+- Each attempt is counted with one atomic Redis `INCR` **before** the password is checked, and a successful login resets the counter. Concurrent guesses therefore can't overshoot the limit (tested with 20 parallel requests: exactly 10 are checked, 10 are refused).
 - The per-email lock applies to unknown emails too, so lockout reveals nothing. It is time-boxed rather than permanent, so an attacker can't lock a victim out indefinitely. Emails are hashed in Redis keys.
 - **Fail-closed:** if Redis is unavailable, login and registration return `503` rather than silently losing brute-force protection.
 - **Generic failures:** unknown email, wrong password, no password set, suspended or deactivated account, and no active membership all return the same `401 INVALID_CREDENTIALS` body. They also do the same work: an unknown email is verified against a dummy argon2 hash.
@@ -59,6 +62,8 @@ Fixed-window counters in Redis (`RateLimiterService`), shared by all API instanc
 The BFF forwards the client IP to the API as `X-Forwarded-For`, using the **rightmost** hop of the header it received. The API trusts that header only from `TRUST_PROXY` hops (default `loopback`).
 
 Next.js does not append to `X-Forwarded-For`. It only fills it in when the header is absent. **In production the web app must run behind a reverse proxy or load balancer that sets or appends `X-Forwarded-For`**, and `TRUST_PROXY` must name the BFF's address or subnet. Otherwise clients can spoof their IP and evade the per-IP limits. The per-email lock still protects accounts either way.
+
+**Misconfiguration is detected at runtime.** The BFF always sends `X-Forwarded-For`. If that header arrives from a peer `TRUST_PROXY` doesn't trust, the API logs a `TrustProxy` warning (once per process) that names the peer. When that happens, all users are sharing one per-IP limit. A startup check can't tell whether `loopback` is correct, so detection happens on real traffic instead.
 
 ## Not yet implemented (tracked)
 

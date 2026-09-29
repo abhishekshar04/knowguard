@@ -47,8 +47,10 @@ function messageFor(error: unknown): string {
     }
     if (error.code === 'INVALID_CREDENTIALS') return 'Invalid email or password.';
     if (error.status < 500) return error.message;
+    if (error.status !== 503) return 'Something went wrong. Please try again.';
   }
-  return 'Something went wrong. Please try again.';
+  // 503 from the API, or the API is unreachable (network error/timeout).
+  return 'KnowGuard is temporarily unavailable. Please try again shortly.';
 }
 
 async function startSession(grant: SessionGrant): Promise<void> {
