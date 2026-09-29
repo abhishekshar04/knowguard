@@ -74,18 +74,45 @@ export async function apiRequest<T>(
 
   if (res.status === 204) return undefined as T;
   const payload: unknown = await res.json().catch(() => null);
-  if (!res.ok) {
-    const error = (payload as ApiErrorBody | null)?.error;
-    const retryAfter = Number(res.headers.get('retry-after'));
-    throw new ApiError(
-      res.status,
-      error?.code ?? 'INTERNAL_ERROR',
-      error?.message ?? 'An unexpected error occurred.',
-      error?.details ?? [],
-      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
-    );
-  }
+  if (!res.ok) throw toApiError(res, payload);
   return payload as T;
+}
+
+/** multipart/form-data passthrough (uploads). The API validates file type, size and fields. */
+export async function apiUpload<T>(path: string, form: FormData, token: string): Promise<T> {
+  const res = await fetch(apiUrl(path), {
+    method: 'POST',
+    cache: 'no-store',
+    signal: AbortSignal.timeout(120_000),
+    headers: { ...(await forwardedHeaders()), Authorization: `Bearer ${token}` },
+    body: form,
+  });
+  const payload: unknown = await res.json().catch(() => null);
+  if (!res.ok) throw toApiError(res, payload);
+  return payload as T;
+}
+
+/** Raw response (file downloads): the caller streams the body onward. */
+export async function apiFetchRaw(path: string, token: string): Promise<Response> {
+  const res = await fetch(apiUrl(path), {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(120_000),
+    headers: { ...(await forwardedHeaders()), Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw toApiError(res, await res.json().catch(() => null));
+  return res;
+}
+
+function toApiError(res: Response, payload: unknown): ApiError {
+  const error = (payload as ApiErrorBody | null)?.error;
+  const retryAfter = Number(res.headers.get('retry-after'));
+  return new ApiError(
+    res.status,
+    error?.code ?? 'INTERNAL_ERROR',
+    error?.message ?? 'An unexpected error occurred.',
+    error?.details ?? [],
+    Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+  );
 }
 
 export type HealthResult = { reachable: true; health: HealthResponse } | { reachable: false };

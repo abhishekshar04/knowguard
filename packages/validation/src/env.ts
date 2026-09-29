@@ -10,6 +10,24 @@ const redisUrl = z
   .url()
   .refine((value) => /^rediss?:\/\//.test(value), 'must be a redis:// connection string');
 
+const booleanFlag = z
+  .enum(['true', 'false'])
+  .default('false')
+  .transform((value) => value === 'true');
+
+/** S3-compatible object storage (SeaweedFS/MinIO locally, S3/R2/… in production). */
+const storageEnvShape = {
+  /** Omit for AWS S3; set for self-hosted S3-compatible stores. */
+  STORAGE_ENDPOINT: z.url().optional(),
+  STORAGE_REGION: z.string().min(1).default('us-east-1'),
+  STORAGE_BUCKET: z.string().regex(/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/, 'must be a valid S3 bucket name'),
+  STORAGE_ACCESS_KEY_ID: z.string().min(1),
+  STORAGE_SECRET_ACCESS_KEY: z.string().min(1),
+  STORAGE_FORCE_PATH_STYLE: booleanFlag,
+  /** Create the bucket on startup if missing. Development/test convenience only. */
+  STORAGE_AUTO_CREATE_BUCKET: booleanFlag,
+};
+
 export const apiEnvSchema = z.object({
   NODE_ENV: nodeEnv,
   LOG_LEVEL: logLevel,
@@ -36,6 +54,8 @@ export const apiEnvSchema = z.object({
    * to the BFF's address/subnet so clients cannot spoof their IP for rate limiting.
    */
   TRUST_PROXY: z.string().min(1).default('loopback'),
+  ...storageEnvShape,
+  MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(512).default(25),
 });
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
 

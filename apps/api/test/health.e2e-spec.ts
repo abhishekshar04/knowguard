@@ -20,7 +20,7 @@ describe('API (e2e)', () => {
       const res = await request(app.getHttpServer()).get('/api/v1/health').expect(200);
       const body = res.body as HealthResponse;
       expect(body.status).toBe('ok');
-      expect(body.checks).toEqual({ database: 'up', redis: 'up' });
+      expect(body.checks).toEqual({ database: 'up', redis: 'up', storage: 'up' });
       expect(res.headers['cache-control']).toBe('no-store');
     });
 

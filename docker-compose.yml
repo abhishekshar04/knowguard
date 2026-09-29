@@ -44,6 +44,31 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
 
+  object-storage:
+    # S3-compatible object storage for local development (SeaweedFS, Apache-2.0). MinIO no
+    # longer publishes container images. Credentials from .env; anonymous access is denied.
+    image: chrislusf/seaweedfs:4.48
+    restart: unless-stopped
+    command: ['server', '-dir=/data', '-s3', '-s3.port=8333', '-ip.bind=0.0.0.0']
+    environment:
+      AWS_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY_ID:?set STORAGE_ACCESS_KEY_ID in .env}
+      AWS_SECRET_ACCESS_KEY: ${STORAGE_SECRET_ACCESS_KEY:?set STORAGE_SECRET_ACCESS_KEY in .env}
+    ports:
+      - '127.0.0.1:${STORAGE_PORT:-8333}:8333'
+    volumes:
+      - object-storage-data:/data
+    healthcheck:
+      # Any HTTP answer (403 for anonymous) means the S3 gateway is up.
+      test:
+        [
+          'CMD-SHELL',
+          'wget -q -O /dev/null http://127.0.0.1:8333/ 2>&1 | grep -q 403 || wget -q --spider http://127.0.0.1:8333/',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
 volumes:
   postgres-data:
   redis-data:
+  object-storage-data:

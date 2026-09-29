@@ -16,6 +16,10 @@ export async function createTestApp(): Promise<{ app: INestApplication; prisma: 
     NODE_ENV: 'test',
     DATABASE_URL: process.env.TEST_DATABASE_URL,
     TRUST_PROXY: 'loopback',
+    // Tests use their own bucket (created on boot) and a small upload limit.
+    STORAGE_BUCKET: `${process.env.STORAGE_BUCKET ?? 'knowguard-documents'}-test`,
+    STORAGE_AUTO_CREATE_BUCKET: 'true',
+    MAX_UPLOAD_MB: '2',
   });
   const moduleRef = await Test.createTestingModule({ imports: [AppModule.forRoot(env)] }).compile();
   const app = moduleRef.createNestApplication({ bodyParser: false, logger: false });

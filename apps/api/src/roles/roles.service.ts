@@ -118,6 +118,12 @@ export class RolesService {
           HttpStatus.CONFLICT,
         );
       }
+      await tx.documentPermission.deleteMany({
+        where: { organizationId: auth.organizationId, subjectType: 'ROLE', subjectId: role.id },
+      });
+      await tx.documentAudience.deleteMany({
+        where: { organizationId: auth.organizationId, targetId: role.id },
+      });
       await tx.role.delete({ where: { id: role.id } });
     });
   }

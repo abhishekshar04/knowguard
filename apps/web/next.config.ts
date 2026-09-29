@@ -10,6 +10,11 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
+  experimental: {
+    // Document uploads pass through server actions (BFF). Keep this just above the API's
+    // MAX_UPLOAD_MB (25) so the API — not Next.js — produces the "too large" error.
+    serverActions: { bodySizeLimit: '26mb' },
+  },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }];
   },

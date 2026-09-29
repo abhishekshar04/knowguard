@@ -108,7 +108,14 @@ export class StructureService {
         HttpStatus.CONFLICT,
       );
     }
-    await this.prisma.department.delete({ where: { id_organizationId: { id, organizationId } } });
+    await this.prisma.$transaction([
+      // Document ACL entries and audiences referencing the department go with it.
+      this.prisma.documentPermission.deleteMany({
+        where: { organizationId, subjectType: 'DEPARTMENT', subjectId: id },
+      }),
+      this.prisma.documentAudience.deleteMany({ where: { organizationId, targetId: id } }),
+      this.prisma.department.delete({ where: { id_organizationId: { id, organizationId } } }),
+    ]);
   }
 
   async addDepartmentMember(organizationId: string, departmentId: string, userId: string): Promise<void> {
@@ -173,7 +180,13 @@ export class StructureService {
 
   async deleteTeam(organizationId: string, id: string): Promise<void> {
     await this.findTeam(organizationId, id);
-    await this.prisma.team.delete({ where: { id_organizationId: { id, organizationId } } });
+    await this.prisma.$transaction([
+      this.prisma.documentPermission.deleteMany({
+        where: { organizationId, subjectType: 'TEAM', subjectId: id },
+      }),
+      this.prisma.documentAudience.deleteMany({ where: { organizationId, targetId: id } }),
+      this.prisma.team.delete({ where: { id_organizationId: { id, organizationId } } }),
+    ]);
   }
 
   async addTeamMember(organizationId: string, teamId: string, userId: string): Promise<void> {
