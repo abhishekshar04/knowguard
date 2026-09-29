@@ -66,3 +66,107 @@ export interface MeResponse {
 
 /** Header the BFF uses to forward the end user's user-agent to the API. */
 export const FORWARDED_USER_AGENT_HEADER = 'x-knowguard-user-agent';
+
+// ── Organization administration (Phase 3) ────────────────────────────────────────────────
+
+export type MemberStatus = 'ACTIVE' | 'INVITED' | 'SUSPENDED' | 'DEACTIVATED';
+
+export interface NamedRef {
+  id: string;
+  name: string;
+}
+
+export interface MemberSummary {
+  id: string;
+  name: string;
+  email: string;
+  /** Effective status in the caller's organization (membership suspension wins). */
+  status: MemberStatus;
+  emailVerified: boolean;
+  roles: string[];
+  departments: NamedRef[];
+  teams: NamedRef[];
+  joinedAt: string;
+  lastLoginAt: string | null;
+  /**
+   * Whether the CALLER may change this member's roles/status (not themselves, and not a member
+   * holding permissions the caller lacks). A UI hint only — the API re-checks every change.
+   */
+  manageable: boolean;
+}
+
+export interface MemberListResponse {
+  members: MemberSummary[];
+}
+
+export interface InvitationGrant {
+  /** One-time token; the BFF turns it into /invite/<token>. Shown to the inviting admin once. */
+  token: string;
+  expiresAt: string;
+}
+
+export interface InviteMemberResponse {
+  member: MemberSummary;
+  invitation: InvitationGrant;
+}
+
+export interface InvitationPreview {
+  organizationName: string;
+  email: string;
+  name: string;
+  expiresAt: string;
+}
+
+export interface RoleSummary {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  isSystem: boolean;
+  permissions: string[];
+  memberCount: number;
+  /** Whether the caller may assign this role (its permissions are a subset of the caller's). */
+  assignable: boolean;
+}
+
+export interface RoleListResponse {
+  roles: RoleSummary[];
+}
+
+export interface OrganizationDetails {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+  memberCount: number;
+}
+
+export interface MemberRef {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface DepartmentDetails {
+  id: string;
+  name: string;
+  description: string | null;
+  teams: NamedRef[];
+  members: MemberRef[];
+}
+
+export interface TeamDetails {
+  id: string;
+  name: string;
+  description: string | null;
+  department: NamedRef;
+  members: MemberRef[];
+}
+
+export interface DepartmentListResponse {
+  departments: DepartmentDetails[];
+}
+
+export interface TeamListResponse {
+  teams: TeamDetails[];
+}

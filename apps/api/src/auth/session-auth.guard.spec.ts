@@ -3,22 +3,25 @@ import { Reflector } from '@nestjs/core';
 
 import { ApiException } from '../common/api-exception';
 import type { AuthContext, AuthenticatedRequest } from './auth-context';
+import { REQUIRED_PERMISSIONS_KEY } from '../authorization/require-permission.decorator';
 import { IS_PUBLIC_KEY, REQUIRE_VERIFIED_EMAIL_KEY } from './auth.decorators';
 import { SessionAuthGuard } from './session-auth.guard';
 import type { SessionService } from './session.service';
 
 const TOKEN = 'a'.repeat(43);
-const auth = (emailVerified = true): AuthContext => ({
+const auth = (emailVerified = true, permissions: string[] = []): AuthContext => ({
   sessionId: 's1',
   userId: 'u1',
   organizationId: 'o1',
   email: 'a@b.co',
   emailVerified,
   sessionExpiresAt: new Date(),
+  roles: [],
+  permissions: new Set(permissions),
 });
 
 function setup(opts: {
-  metadata?: Record<string, boolean>;
+  metadata?: Record<string, unknown>;
   authorization?: string;
   result?: AuthContext | null;
 }) {
@@ -94,5 +97,29 @@ describe('SessionAuthGuard', () => {
       metadata: { [REQUIRE_VERIFIED_EMAIL_KEY]: true },
     });
     await expect(guard.canActivate(context)).resolves.toBe(true);
+  });
+
+  describe('@RequirePermission()', () => {
+    const withPermissions = (held: string[], required: string[]) =>
+      setup({
+        authorization: `Bearer ${TOKEN}`,
+        result: auth(true, held),
+        metadata: { [REQUIRED_PERMISSIONS_KEY]: required },
+      });
+
+    it('allows a caller holding every required permission', async () => {
+      const { guard, context } = withPermissions(['user.read', 'user.create'], ['user.read', 'user.create']);
+      await expect(guard.canActivate(context)).resolves.toBe(true);
+    });
+
+    it('denies with FORBIDDEN when any required permission is missing', async () => {
+      const { guard, context } = withPermissions(['user.read'], ['user.read', 'user.create']);
+      expect(await codeOf(guard.canActivate(context))).toBe('FORBIDDEN');
+    });
+
+    it('authenticates before authorizing (no session → 401, not 403)', async () => {
+      const { guard, context } = setup({ metadata: { [REQUIRED_PERMISSIONS_KEY]: ['user.read'] } });
+      expect(await codeOf(guard.canActivate(context))).toBe('UNAUTHENTICATED');
+    });
   });
 });

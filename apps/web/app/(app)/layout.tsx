@@ -13,9 +13,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <AppSidebar
         user={{ name: me.user.name, email: me.user.email }}
         organizationName={me.organization.name}
+        permissions={me.permissions}
       />
-      <main className="flex-1 overflow-x-hidden">
-        <MobileHeader organizationName={me.organization.name} />
+      <main className="min-w-0 flex-1">
+        <MobileHeader organizationName={me.organization.name} permissions={me.permissions} />
         <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-8">{children}</div>
       </main>
     </div>
