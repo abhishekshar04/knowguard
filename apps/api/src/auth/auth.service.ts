@@ -18,8 +18,12 @@ import { SessionService } from './session.service';
 export const AUTH_RATE_LIMITS = {
   /** All login attempts from one client IP. */
   loginPerIp: { limit: 30, windowSeconds: 15 * 60 },
-  /** FAILED logins for one email from any IP — a temporary lock, applied to unknown emails too. */
-  loginFailuresPerEmail: { limit: 10, windowSeconds: 15 * 60 },
+  /**
+   * Login attempts for one email since its last successful login, from any IP. A temporary
+   * lock, applied to unknown emails too. Each attempt is counted BEFORE the password check
+   * (one atomic INCR), so concurrent guesses cannot overshoot the limit.
+   */
+  loginAttemptsPerEmail: { limit: 10, windowSeconds: 15 * 60 },
   /** Account/organization creation from one client IP. */
   registerPerIp: { limit: 5, windowSeconds: 60 * 60 },
 } as const satisfies Record<string, RateLimitRule>;
@@ -102,9 +106,9 @@ export class AuthService implements OnModuleInit {
    * response after the same amount of work.
    */
   async login(input: LoginInput, meta: RequestMeta): Promise<SessionGrant> {
-    const failureKey = `login:fail:${emailKey(input.email)}`;
+    const emailAttemptsKey = `login:email:${emailKey(input.email)}`;
     await this.rateLimiter.consume(`login:ip:${meta.ip}`, AUTH_RATE_LIMITS.loginPerIp);
-    await this.rateLimiter.assertBelow(failureKey, AUTH_RATE_LIMITS.loginFailuresPerEmail);
+    await this.rateLimiter.consume(emailAttemptsKey, AUTH_RATE_LIMITS.loginAttemptsPerEmail);
 
     const user = await this.prisma.user.findUnique({
       where: { email: input.email },
@@ -125,11 +129,11 @@ export class AuthService implements OnModuleInit {
     const membership = user?.memberships[0];
 
     if (!user || !user.passwordHash || !passwordOk || user.status !== 'ACTIVE' || !membership) {
-      await this.rateLimiter.record(failureKey, AUTH_RATE_LIMITS.loginFailuresPerEmail);
       throw invalidCredentials();
     }
 
-    await this.rateLimiter.reset(failureKey);
+    // Success clears the attempt counter so legitimate users aren't penalised for earlier typos.
+    await this.rateLimiter.reset(emailAttemptsKey);
     const issued = await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
       return this.sessions.issue(tx, { userId: user.id, organizationId: membership.organizationId, meta });

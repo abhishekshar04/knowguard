@@ -93,6 +93,9 @@ importers:
       dotenv-cli:
         specifier: 11.0.0
         version: 11.0.0
+      express:
+        specifier: 5.2.1
+        version: 5.2.1
       jest:
         specifier: 30.5.2
         version: 30.5.2(@types/node@22.20.4)

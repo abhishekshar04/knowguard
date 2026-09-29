@@ -5,7 +5,7 @@ import type { RedisService } from './redis.service';
 type ExecResult = Array<[Error | null, unknown]>;
 
 function limiterWith(exec: () => Promise<ExecResult | null>) {
-  const chain = { incr: () => chain, expire: () => chain, ttl: () => chain, get: () => chain, exec };
+  const chain = { incr: () => chain, expire: () => chain, ttl: () => chain, exec };
   const redis = { client: { multi: () => chain, del: jest.fn() } } as unknown as RedisService;
   return new RateLimiterService(redis);
 }
@@ -41,13 +41,5 @@ describe('RateLimiterService', () => {
     expect(error).toBeInstanceOf(ApiException);
     expect((error as ApiException).getStatus()).toBe(503);
     expect((error as ApiException).message).not.toContain('Connection');
-  });
-
-  it('assertBelow blocks at the limit without recording', async () => {
-    const limiter = limiterWith(async () => [
-      [null, '3'],
-      [null, 30],
-    ]);
-    await expect(limiter.assertBelow('k', rule)).rejects.toBeInstanceOf(RateLimitedException);
   });
 });

@@ -1,8 +1,9 @@
-import type { INestApplication } from '@nestjs/common';
+import { type INestApplication, Logger } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 
 import { ApiExceptionFilter } from './common/api-exception.filter';
+import { createUntrustedForwardingDetector } from './common/untrusted-forwarding.detector';
 import type { ApiEnv } from './config/api-env';
 
 export const API_PREFIX = 'api/v1';
@@ -18,6 +19,8 @@ export function configureApp(app: INestApplication, env: ApiEnv): void {
 
   app.setGlobalPrefix(API_PREFIX);
   app.use(helmet());
+  const proxyLogger = new Logger('TrustProxy');
+  app.use(createUntrustedForwardingDetector((message) => proxyLogger.warn(message)));
   // No CORS: browsers never call the API directly (they go through the Next.js BFF), so
   // cross-origin browser requests are refused by default.
   app.useGlobalFilters(new ApiExceptionFilter());

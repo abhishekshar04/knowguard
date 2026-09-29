@@ -1,7 +1,20 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": ["tsconfig.base.json"],
-  "globalPassThroughEnv": ["NODE_ENV"],
+  "globalPassThroughEnv": [
+    "NODE_ENV",
+    "CI",
+    "DATABASE_URL",
+    "TEST_DATABASE_URL",
+    "REDIS_URL",
+    "API_URL",
+    "LOG_LEVEL",
+    "SESSION_TTL_HOURS",
+    "SESSION_IDLE_TIMEOUT_MINUTES",
+    "TRUST_PROXY",
+    "SESSION_COOKIE_SECURE",
+    "SEED_USER_PASSWORD"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
