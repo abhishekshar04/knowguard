@@ -10,8 +10,8 @@ import {
   canManageMember,
   MANAGEMENT_DENIAL_MESSAGES,
   type ManagementVerdict,
-  OWNERSHIP_PERMISSION,
 } from '../authorization/management-policy';
+import { assertOwnershipRemains } from '../authorization/ownership';
 import { permissionsOf, roleKeysOf, rolesWithPermissionsSelect } from '../authorization/role-permissions';
 import { ApiException, notFound } from '../common/api-exception';
 import { isUniqueViolation } from '../common/prisma-errors';
@@ -149,7 +149,7 @@ export class MembersService {
       });
       await this.invitations.revokeOutstanding(tx, userId, auth.organizationId);
       await this.sessions.revokeAllForMembership(tx, userId, auth.organizationId, 'membership_suspended');
-      await this.assertOwnershipRemains(tx, auth.organizationId);
+      await assertOwnershipRemains(tx, auth.organizationId);
       return this.loadMember(tx, auth.organizationId, userId);
     });
     return this.toSummary(row, auth);
@@ -191,7 +191,7 @@ export class MembersService {
       await tx.userRole.createMany({
         data: roles.map((role) => ({ userId, organizationId: auth.organizationId, roleId: role.id })),
       });
-      await this.assertOwnershipRemains(tx, auth.organizationId);
+      await assertOwnershipRemains(tx, auth.organizationId);
       return this.loadMember(tx, auth.organizationId, userId);
     });
     return this.toSummary(row, auth);
@@ -232,29 +232,6 @@ export class MembersService {
         { userId: target.user.id, permissions: permissionsOf(target.roles) },
       ),
     );
-  }
-
-  /**
-   * Defense in depth: the organization must keep an active member who holds the ownership
-   * permission. The management policy already makes losing the last owner impossible (you
-   * can't change yourself, and only an owner can change an owner); this guards custom roles.
-   */
-  private async assertOwnershipRemains(tx: Tx, organizationId: string): Promise<void> {
-    const owners = await tx.userOrganization.count({
-      where: {
-        organizationId,
-        status: 'ACTIVE',
-        user: { status: 'ACTIVE' },
-        roles: { some: { role: { permissions: { some: { permission: { key: OWNERSHIP_PERMISSION } } } } } },
-      },
-    });
-    if (owners === 0) {
-      throw new ApiException(
-        'LAST_OWNER',
-        'The organization must keep at least one active owner.',
-        HttpStatus.CONFLICT,
-      );
-    }
   }
 
   private toSummary(row: MemberRow, auth: AuthContext): MemberSummary {

@@ -134,3 +134,36 @@ test('departments and teams: create, add a member, and the member sees their tea
   await expect(member.page.getByTestId('my-team-Platform')).toBeVisible();
   await member.context.close();
 });
+
+test('owner creates a custom role, assigns it, and the permission matrix reflects it', async ({
+  page,
+  browser,
+}) => {
+  await registerViaUi(page, { organizationName: 'Roles Co' });
+  await expect(page).toHaveURL(/\/dashboard$/);
+
+  await page.goto('/admin/roles');
+  await page.getByLabel('Role name').first().fill('Support Lead');
+  for (const key of ['organization.read', 'user.read', 'document.read']) {
+    await page.locator(`input[name="permissions"][value="${key}"]`).first().check();
+  }
+  await page.getByRole('button', { name: 'Create role' }).click();
+  const card = page.getByTestId('role-SUPPORT_LEAD');
+  await expect(card).toBeVisible();
+  await expect(card).toContainText('3 permissions');
+
+  await page.goto('/admin/permissions');
+  const matrix = page.getByTestId('permission-matrix');
+  await expect(matrix.getByRole('columnheader', { name: 'Support Lead' })).toBeVisible();
+
+  // Assign it to a new member, who then sees exactly that role.
+  const email = uniqueEmail('support');
+  const inviteUrl = await inviteViaUi(page, { name: 'Sue Support', email, role: 'Support Lead' });
+  const member = await acceptInFreshBrowser(browser, inviteUrl);
+  await expect(member.page.getByTestId('roles')).toHaveText('SUPPORT_LEAD');
+  await member.context.close();
+
+  // Built-in roles offer no edit controls.
+  await page.goto('/admin/roles');
+  await expect(page.getByTestId('role-OWNER').getByText('Edit role')).toHaveCount(0);
+});

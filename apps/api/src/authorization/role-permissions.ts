@@ -7,6 +7,7 @@ export const rolesWithPermissionsSelect = {
   select: {
     role: {
       select: {
+        id: true,
         key: true,
         permissions: { select: { permission: { select: { key: true } } } },
       },
@@ -15,7 +16,7 @@ export const rolesWithPermissionsSelect = {
 } as const;
 
 interface RoleAssignment {
-  role: { key: string; permissions: ReadonlyArray<{ permission: { key: string } }> };
+  role: { id: string; key: string; permissions: ReadonlyArray<{ permission: { key: string } }> };
 }
 
 export function permissionsOf(assignments: ReadonlyArray<RoleAssignment>): Set<string> {
@@ -24,4 +25,8 @@ export function permissionsOf(assignments: ReadonlyArray<RoleAssignment>): Set<s
 
 export function roleKeysOf(assignments: ReadonlyArray<RoleAssignment>): string[] {
   return assignments.map((a) => a.role.key).sort();
+}
+
+export function roleIdsOf(assignments: ReadonlyArray<RoleAssignment>): Set<string> {
+  return new Set(assignments.map((a) => a.role.id));
 }

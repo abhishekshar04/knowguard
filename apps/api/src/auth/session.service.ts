@@ -4,7 +4,12 @@ import type { Prisma } from '@knowguard/database';
 
 import { PrismaService } from '../common/prisma.service';
 import type { RequestMeta } from '../common/request-meta';
-import { permissionsOf, roleKeysOf, rolesWithPermissionsSelect } from '../authorization/role-permissions';
+import {
+  permissionsOf,
+  roleIdsOf,
+  roleKeysOf,
+  rolesWithPermissionsSelect,
+} from '../authorization/role-permissions';
 import { API_ENV, type ApiEnv } from '../config/api-env';
 import type { AuthContext } from './auth-context';
 import { evaluateSession } from './session-policy';
@@ -68,7 +73,14 @@ export class SessionService {
         lastSeenAt: true,
         revokedAt: true,
         user: { select: { email: true, status: true, emailVerifiedAt: true } },
-        membership: { select: { status: true, roles: rolesWithPermissionsSelect } },
+        membership: {
+          select: {
+            status: true,
+            roles: rolesWithPermissionsSelect,
+            teamMemberships: { select: { teamId: true } },
+            departmentMemberships: { select: { departmentId: true } },
+          },
+        },
       },
     });
     if (!session) return null;
@@ -103,6 +115,9 @@ export class SessionService {
       sessionExpiresAt: session.expiresAt,
       roles: roleKeysOf(session.membership.roles),
       permissions: permissionsOf(session.membership.roles),
+      roleIds: roleIdsOf(session.membership.roles),
+      teamIds: new Set(session.membership.teamMemberships.map((m) => m.teamId)),
+      departmentIds: new Set(session.membership.departmentMemberships.map((m) => m.departmentId)),
     };
   }
 

@@ -127,6 +127,22 @@ export interface RoleSummary {
   memberCount: number;
   /** Whether the caller may assign this role (its permissions are a subset of the caller's). */
   assignable: boolean;
+  /**
+   * Whether the caller may edit/delete it: custom (not system), within the caller's own access,
+   * and not a role the caller holds. A UI hint — the API re-checks.
+   */
+  editable: boolean;
+}
+
+export interface PermissionInfo {
+  key: string;
+  description: string;
+  /** Resource part of the key, e.g. "document" for "document.read". */
+  group: string;
+}
+
+export interface PermissionListResponse {
+  permissions: PermissionInfo[];
 }
 
 export interface RoleListResponse {

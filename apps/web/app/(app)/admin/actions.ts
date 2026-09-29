@@ -214,3 +214,28 @@ export async function removeTeamMemberAction(_prev: ActionResult, form: FormData
     STRUCTURE_PAGES,
   );
 }
+
+// ── roles ──────────────────────────────────────────────────────────────────────────────
+
+const ROLE_PAGES = ['/admin/roles', '/admin/permissions', '/admin/users'];
+
+function roleBody(form: FormData) {
+  const description = field(form, 'description');
+  return {
+    name: field(form, 'name'),
+    description: description || null,
+    permissions: form.getAll('permissions').filter((value): value is string => typeof value === 'string'),
+  };
+}
+
+export async function createRoleAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return call('POST', '/roles', roleBody(form), ROLE_PAGES, 'Role created.');
+}
+
+export async function updateRoleAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return call('PATCH', `/roles/${segment(field(form, 'roleId'))}`, roleBody(form), ROLE_PAGES, 'Role saved.');
+}
+
+export async function deleteRoleAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  return call('DELETE', `/roles/${segment(field(form, 'roleId'))}`, undefined, ROLE_PAGES);
+}
