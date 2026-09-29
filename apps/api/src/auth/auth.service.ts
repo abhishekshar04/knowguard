@@ -73,7 +73,13 @@ export class AuthService implements OnModuleInit {
       try {
         const issued = await this.prisma.$transaction(async (tx) => {
           const user = await tx.user.create({
-            data: { email: input.email, name: input.name, passwordHash, status: 'ACTIVE' },
+            data: {
+              email: input.email,
+              name: input.name,
+              passwordHash,
+              status: 'ACTIVE',
+              lastLoginAt: new Date(), // registration signs the user in
+            },
             select: { id: true },
           });
           const organization = await this.organizations.createWithOwner(tx, {
@@ -147,7 +153,7 @@ export class AuthService implements OnModuleInit {
 
   /** Everything is scoped by the session's user and organization — never by client input. */
   async me(auth: AuthContext): Promise<MeResponse> {
-    const [user, organization, assignments] = await Promise.all([
+    const [user, organization] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: auth.userId },
         select: { id: true, email: true, name: true, emailVerifiedAt: true },
@@ -156,26 +162,17 @@ export class AuthService implements OnModuleInit {
         where: { id: auth.organizationId },
         select: { id: true, name: true, slug: true },
       }),
-      this.prisma.userRole.findMany({
-        where: { userId: auth.userId, organizationId: auth.organizationId },
-        select: {
-          role: { select: { key: true, permissions: { select: { permission: { select: { key: true } } } } } },
-        },
-      }),
     ]);
     if (!user || !organization) {
       this.logger.warn(`Session ${auth.sessionId} references a missing user or organization`);
       throw unauthenticated();
     }
 
-    const permissions = new Set(
-      assignments.flatMap((assignment) => assignment.role.permissions.map((grant) => grant.permission.key)),
-    );
     return {
       user: { id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerifiedAt !== null },
       organization,
-      roles: assignments.map((assignment) => assignment.role.key).sort(),
-      permissions: [...permissions].sort(),
+      roles: [...auth.roles],
+      permissions: [...auth.permissions].sort(),
       session: { expiresAt: auth.sessionExpiresAt.toISOString() },
     };
   }

@@ -2,7 +2,8 @@ import { type NextRequest, NextResponse } from 'next/server';
 
 import { sessionCookieName } from '@/lib/session-cookie';
 
-const PUBLIC_PATHS = ['/login', '/register'];
+// /invite: invitees have no session yet — the one-time token in the URL is their credential.
+const PUBLIC_PATHS = ['/login', '/register', '/invite'];
 
 /**
  * Optimistic routing only: sends visitors without a session cookie to /login before rendering.

@@ -11,6 +11,10 @@ export interface AuthContext {
   email: string;
   emailVerified: boolean;
   sessionExpiresAt: Date;
+  /** Role keys held in organizationId (display only — never authorize on role names). */
+  roles: readonly string[];
+  /** Permission keys granted through those roles, loaded with the session on every request. */
+  permissions: ReadonlySet<string>;
 }
 
 export interface AuthenticatedRequest extends Request {

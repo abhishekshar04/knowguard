@@ -7,11 +7,11 @@ import {
   SESSION_COOKIE,
   signOut,
   uniqueEmail,
-  useIsolatedClientIp,
+  isolateClientIp,
 } from './helpers';
 
 test.beforeEach(async ({ page }) => {
-  await useIsolatedClientIp(page);
+  await isolateClientIp(page);
 });
 
 test('protected pages redirect anonymous visitors to sign-in', async ({ page }) => {

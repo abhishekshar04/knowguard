@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import { PERMISSION_KEYS } from '@knowguard/authorization';
 import type { MeResponse, SessionGrant } from '@knowguard/types';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -138,7 +139,7 @@ describe('GET /auth/me', () => {
     expect(body.user).toMatchObject({ email, name: 'Grace Hopper', emailVerified: false });
     expect(body.organization.name).toBe('Compiler Co');
     expect(body.roles).toEqual(['OWNER']);
-    expect(body.permissions).toHaveLength(17);
+    expect(body.permissions).toEqual([...PERMISSION_KEYS].sort()); // OWNER holds the whole catalog
     expect(body.session.expiresAt).toBe(grant.expiresAt);
     expect(JSON.stringify(body)).not.toMatch(/passwordHash|argon2|tokenHash/);
   });

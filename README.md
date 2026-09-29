@@ -6,7 +6,7 @@ Permission-aware enterprise knowledge platform. The core invariant:
 
 Authorization happens **before** retrieval and context construction — never by asking an LLM to withhold information.
 
-**Status: Phase 2 (authentication).** Self-serve registration (creates an organization with you as OWNER), login, logout, server-side revocable sessions, a Next.js BFF with HttpOnly cookies, rate limiting, and CI. Documents, search and AI come later.
+**Status: Phase 3 (multi-tenancy).** Everything from Phase 2 (self-serve registration, sessions, a Next.js BFF with HttpOnly cookies, rate limiting, CI), plus member administration: invite links, role changes, suspension, and privilege-escalation protection. Departments and teams can be managed, along with their members. The admin pages are Users, Departments and Teams; members also get Teams and Settings pages. Documents, search and AI come later.
 
 ## How authentication works
 
@@ -106,6 +106,7 @@ See [docs/adr](docs/adr):
 3. [Tenant isolation enforced in the schema](docs/adr/0003-tenant-isolation-in-schema.md)
 4. [Credentials and API error handling](docs/adr/0004-credentials-and-errors.md)
 5. [Identity, membership, sessions and the BFF](docs/adr/0005-identity-membership-and-sessions.md)
+6. [Minimal RBAC, invitations and organization structure](docs/adr/0006-rbac-invitations-and-organization-structure.md)
 
 ## Deploying: required
 

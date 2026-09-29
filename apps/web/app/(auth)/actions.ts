@@ -1,7 +1,7 @@
 'use server';
 
 import type { SessionGrant } from '@knowguard/types';
-import { loginSchema, registerSchema } from '@knowguard/validation';
+import { acceptInvitationSchema, loginSchema, registerSchema } from '@knowguard/validation';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 
@@ -90,6 +90,27 @@ export async function registerAction(_prev: AuthFormState, form: FormData): Prom
     if (error instanceof ApiError && error.code === 'VALIDATION_FAILED') {
       return { values, fieldErrors: fieldErrorsFrom(error.details) };
     }
+    return { values, error: messageFor(error) };
+  }
+  redirect('/dashboard');
+}
+
+/** Accepting an invitation sets the password and signs the invitee straight in. */
+export async function acceptInvitationAction(_prev: AuthFormState, form: FormData): Promise<AuthFormState> {
+  const values = { name: field(form, 'name') };
+  const parsed = acceptInvitationSchema.safeParse({
+    password: field(form, 'password'),
+    ...(values.name ? { name: values.name } : {}),
+  });
+  if (!parsed.success) return { values, fieldErrors: fieldErrorsFrom(parsed.error.issues) };
+
+  // The token only ever travels BFF → API in a path segment; encode so it can't alter the route.
+  const token = encodeURIComponent(field(form, 'token'));
+  try {
+    await startSession(
+      await apiRequest<SessionGrant>(`/invitations/${token}/accept`, { method: 'POST', body: parsed.data }),
+    );
+  } catch (error) {
     return { values, error: messageFor(error) };
   }
   redirect('/dashboard');

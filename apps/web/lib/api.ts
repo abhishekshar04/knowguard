@@ -51,7 +51,7 @@ async function forwardedHeaders(): Promise<Record<string, string>> {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   token?: string;
 }

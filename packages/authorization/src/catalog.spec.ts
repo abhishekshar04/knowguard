@@ -36,7 +36,7 @@ describe('permission catalog', () => {
         'ai.query',
       ]),
     );
-    expect(PERMISSION_KEYS).toHaveLength(17);
+    expect(PERMISSION_KEYS).toHaveLength(19); // 17 specified + department.manage, team.manage
   });
 
   it('recognises only catalog keys', () => {
@@ -84,6 +84,8 @@ describe('system roles', () => {
       'role.update',
       'role.delete',
       'audit.read',
+      'department.manage',
+      'team.manage',
     ];
     for (const key of ['MANAGER', 'EMPLOYEE']) {
       for (const permission of sensitive) {

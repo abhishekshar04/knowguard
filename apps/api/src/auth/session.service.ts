@@ -4,6 +4,7 @@ import type { Prisma } from '@knowguard/database';
 
 import { PrismaService } from '../common/prisma.service';
 import type { RequestMeta } from '../common/request-meta';
+import { permissionsOf, roleKeysOf, rolesWithPermissionsSelect } from '../authorization/role-permissions';
 import { API_ENV, type ApiEnv } from '../config/api-env';
 import type { AuthContext } from './auth-context';
 import { evaluateSession } from './session-policy';
@@ -67,7 +68,7 @@ export class SessionService {
         lastSeenAt: true,
         revokedAt: true,
         user: { select: { email: true, status: true, emailVerifiedAt: true } },
-        membership: { select: { status: true } },
+        membership: { select: { status: true, roles: rolesWithPermissionsSelect } },
       },
     });
     if (!session) return null;
@@ -100,6 +101,8 @@ export class SessionService {
       email: session.user.email,
       emailVerified: session.user.emailVerifiedAt !== null,
       sessionExpiresAt: session.expiresAt,
+      roles: roleKeysOf(session.membership.roles),
+      permissions: permissionsOf(session.membership.roles),
     };
   }
 
@@ -110,7 +113,21 @@ export class SessionService {
     });
   }
 
-  /** Used when an account is suspended/deactivated or its password changes (Phase 3+). */
+  /** Signs a member out of one organization (e.g. membership suspended). */
+  async revokeAllForMembership(
+    db: Db,
+    userId: string,
+    organizationId: string,
+    reason: string,
+  ): Promise<number> {
+    const result = await db.session.updateMany({
+      where: { userId, organizationId, revokedAt: null },
+      data: { revokedAt: new Date(), revokedReason: reason },
+    });
+    return result.count;
+  }
+
+  /** Used when an account is suspended/deactivated or its password changes. */
   async revokeAllForUser(userId: string, reason: string): Promise<number> {
     const result = await this.prisma.session.updateMany({
       where: { userId, revokedAt: null },

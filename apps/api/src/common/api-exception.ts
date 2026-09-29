@@ -27,6 +27,17 @@ export class RateLimitedException extends ApiException {
   }
 }
 
+/** Missing capability. Deliberately does not say which permission was required. */
+export const forbidden = (): ApiException =>
+  new ApiException('FORBIDDEN', 'You do not have permission to perform this action.', HttpStatus.FORBIDDEN);
+
+/**
+ * Resource absent OR in another organization — indistinguishable by design, so IDs from other
+ * tenants reveal nothing.
+ */
+export const notFound = (what = 'resource'): ApiException =>
+  new ApiException('NOT_FOUND', `The requested ${what} was not found.`, HttpStatus.NOT_FOUND);
+
 /** The single response for every authentication failure; never says which check failed. */
 export const unauthenticated = (): ApiException =>
   new ApiException('UNAUTHENTICATED', 'Authentication is required.', HttpStatus.UNAUTHORIZED);

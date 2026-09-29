@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@knowguard/auth": "workspace:*",
+    "@knowguard/authorization": "workspace:*",
     "@knowguard/database": "workspace:*",
     "@knowguard/logger": "workspace:*",
     "@knowguard/types": "workspace:*",

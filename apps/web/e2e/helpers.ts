@@ -13,7 +13,7 @@ export function uniqueEmail(label = 'pw'): string {
  * Each test presents a distinct client IP (via X-Forwarded-For) so the API's per-IP
  * registration/login limits don't accumulate across tests and repeated local runs.
  */
-export async function useIsolatedClientIp(page: Page): Promise<void> {
+export async function isolateClientIp(page: Page): Promise<void> {
   const [a, b, c] = randomBytes(3);
   await page.setExtraHTTPHeaders({ 'x-forwarded-for': `10.${a}.${b}.${c}` });
 }

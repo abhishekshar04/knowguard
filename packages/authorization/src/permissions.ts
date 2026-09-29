@@ -16,6 +16,11 @@ export const PERMISSIONS = {
   'role.update': 'Change role permissions and assignments',
   'role.delete': 'Delete custom roles',
 
+  // Not in the initial specification; added in Phase 3 so organization structure can be
+  // delegated to admins without granting organization.update (owner-level settings).
+  'department.manage': 'Create, rename and delete departments and manage their members',
+  'team.manage': 'Create, rename and delete teams and manage their members',
+
   'document.read': 'Read documents the user is granted access to',
   'document.create': 'Upload documents',
   'document.update': 'Update documents the user is granted write access to',

@@ -1,7 +1,8 @@
 import { type CanActivate, type ExecutionContext, HttpStatus, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
-import { ApiException, unauthenticated } from '../common/api-exception';
+import { REQUIRED_PERMISSIONS_KEY } from '../authorization/require-permission.decorator';
+import { ApiException, forbidden, unauthenticated } from '../common/api-exception';
 import type { AuthenticatedRequest } from './auth-context';
 import { IS_PUBLIC_KEY, REQUIRE_VERIFIED_EMAIL_KEY } from './auth.decorators';
 import { SessionService } from './session.service';
@@ -41,6 +42,13 @@ export class SessionAuthGuard implements CanActivate {
         'Verify your email address to perform this action.',
         HttpStatus.FORBIDDEN,
       );
+    }
+    const required = this.reflector.getAllAndOverride<string[] | undefined>(
+      REQUIRED_PERMISSIONS_KEY,
+      targets,
+    );
+    if (required && !required.every((permission) => auth.permissions.has(permission))) {
+      throw forbidden();
     }
     return true;
   }

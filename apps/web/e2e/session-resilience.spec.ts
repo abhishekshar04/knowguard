@@ -1,14 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { OFFLINE_WEB_PORT } from '../playwright.config';
-import {
-  loginViaUi,
-  PASSWORD,
-  registerViaUi,
-  SESSION_COOKIE,
-  uniqueEmail,
-  useIsolatedClientIp,
-} from './helpers';
+import { loginViaUi, PASSWORD, registerViaUi, SESSION_COOKIE, uniqueEmail, isolateClientIp } from './helpers';
 
 /** Host-only (no leading dot), path=/, Secure — the shape a real "__Host-" cookie has. */
 const sessionCookie = (value: string) => ({
@@ -22,7 +15,7 @@ const sessionCookie = (value: string) => ({
 });
 
 test.beforeEach(async ({ page }) => {
-  await useIsolatedClientIp(page);
+  await isolateClientIp(page);
 });
 
 test.describe('stale session cookies', () => {
