@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.next/
+.turbo/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+
+# Environment — never commit real values. .env.example is the template.
+.env
+.env.*
+!.env.example
+
+*.log
+.DS_Store
+Thumbs.db

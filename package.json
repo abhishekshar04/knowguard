@@ -1,0 +1,37 @@
+{
+  "name": "knowguard",
+  "private": true,
+  "description": "KnowGuard — permission-aware enterprise knowledge platform",
+  "packageManager": "pnpm@10.6.1",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e --concurrency=1",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "infra:up": "docker compose up -d --wait",
+    "infra:down": "docker compose down",
+    "db:generate": "pnpm --filter @knowguard/database db:generate",
+    "db:migrate": "pnpm --filter @knowguard/database db:migrate",
+    "db:deploy": "pnpm --filter @knowguard/database db:deploy",
+    "db:seed": "pnpm --filter @knowguard/database db:seed",
+    "db:reset": "pnpm --filter @knowguard/database db:reset"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "22.20.4",
+    "eslint": "9.39.5",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.12.0",
+    "prettier": "3.9.9",
+    "turbo": "2.11.5",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.0"
+  }
+}

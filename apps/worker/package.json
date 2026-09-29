@@ -1,0 +1,27 @@
+{
+  "name": "@knowguard/worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "dotenv -e ../../.env -- tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint src",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@knowguard/logger": "workspace:*",
+    "@knowguard/types": "workspace:*",
+    "@knowguard/validation": "workspace:*",
+    "bullmq": "6.3.10",
+    "ioredis": "5.11.1"
+  },
+  "devDependencies": {
+    "@types/jest": "30.0.0",
+    "dotenv-cli": "11.0.0",
+    "jest": "30.5.2",
+    "ts-jest": "29.4.14",
+    "tsx": "4.23.15"
+  }
+}

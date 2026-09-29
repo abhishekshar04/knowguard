@@ -1,0 +1,192 @@
+// KnowGuard database schema.
+//
+// Tenant-isolation conventions (see docs/adr/0003-tenant-isolation-in-schema.md):
+//  * Every tenant-owned table carries `organization_id`.
+//  * Tenant-owned tables expose a composite unique key (id, organization_id).
+//  * Relationships between tenant-owned rows use COMPOSITE foreign keys that include
+//    organization_id, so PostgreSQL itself rejects links across organizations
+//    (e.g. assigning Org A's role to Org B's user), independent of application code.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+  DEACTIVATED
+}
+
+model Organization {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String   @db.VarChar(200)
+  slug      String   @unique @db.VarChar(63)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  users       User[]
+  departments Department[]
+  teams       Team[]
+  roles       Role[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String     @id @default(uuid(7)) @db.Uuid
+  organizationId String     @map("organization_id") @db.Uuid
+  /// Stored lower-cased. Globally unique so login can resolve the tenant from the email.
+  email          String     @unique @db.VarChar(320)
+  name           String     @db.VarChar(200)
+  /// Argon2id hash. Null for invited users who have not set a password, and for future SSO-only users.
+  passwordHash   String?    @map("password_hash") @db.Text
+  status         UserStatus @default(INVITED)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  roles                 UserRole[]
+  departmentMemberships DepartmentMembership[]
+  teamMemberships       TeamMembership[]
+
+  @@unique([id, organizationId])
+  @@index([organizationId, status])
+  @@map("users")
+}
+
+model Department {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String   @db.VarChar(200)
+  description    String?  @db.Text
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  teams        Team[]
+  members      DepartmentMembership[]
+
+  @@unique([id, organizationId])
+  @@unique([organizationId, name])
+  @@map("departments")
+}
+
+model Team {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  departmentId   String   @map("department_id") @db.Uuid
+  name           String   @db.VarChar(200)
+  description    String?  @db.Text
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// Composite FK: a team can only belong to a department of the same organization.
+  department   Department       @relation(fields: [departmentId, organizationId], references: [id, organizationId], onDelete: Restrict)
+  members      TeamMembership[]
+
+  @@unique([id, organizationId])
+  @@unique([departmentId, name])
+  @@index([organizationId])
+  @@map("teams")
+}
+
+model DepartmentMembership {
+  organizationId String   @map("organization_id") @db.Uuid
+  departmentId   String   @map("department_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  department Department @relation(fields: [departmentId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  user       User       @relation(fields: [userId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@id([departmentId, userId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("department_memberships")
+}
+
+model TeamMembership {
+  organizationId String   @map("organization_id") @db.Uuid
+  teamId         String   @map("team_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  team Team @relation(fields: [teamId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  user User @relation(fields: [userId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@id([teamId, userId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("team_memberships")
+}
+
+/// Roles are per-organization. System roles (OWNER, ADMIN, MANAGER, EMPLOYEE) are provisioned
+/// into each organization with isSystem = true; custom roles use the same table.
+model Role {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  /// Stable machine key, unique per organization (e.g. "OWNER", "SUPPORT_LEAD").
+  key            String   @db.VarChar(64)
+  name           String   @db.VarChar(100)
+  description    String?  @db.Text
+  isSystem       Boolean  @default(false) @map("is_system")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  permissions  RolePermission[]
+  users        UserRole[]
+
+  @@unique([id, organizationId])
+  @@unique([organizationId, key])
+  @@map("roles")
+}
+
+/// Global permission catalog (not tenant-owned). Seeded from @knowguard/authorization.
+model Permission {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  /// "resource.action", e.g. "document.read".
+  key         String   @unique @db.VarChar(100)
+  description String   @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String   @map("role_id") @db.Uuid
+  permissionId String   @map("permission_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Restrict)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  roleId         String   @map("role_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  /// Both composite FKs share organization_id: user and role must be in the same tenant.
+  user User @relation(fields: [userId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  role Role @relation(fields: [roleId, organizationId], references: [id, organizationId], onDelete: Restrict)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@index([organizationId])
+  @@map("user_roles")
+}
