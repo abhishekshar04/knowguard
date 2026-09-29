@@ -18,6 +18,9 @@ const auth = (emailVerified = true, permissions: string[] = []): AuthContext => 
   sessionExpiresAt: new Date(),
   roles: [],
   permissions: new Set(permissions),
+  roleIds: new Set(),
+  teamIds: new Set(),
+  departmentIds: new Set(),
 });
 
 function setup(opts: {

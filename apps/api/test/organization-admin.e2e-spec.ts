@@ -443,3 +443,142 @@ describe('organization settings', () => {
     await as(owner.token).patch('/organization', { name: 'x', slug: 'hijack' }).expect(400);
   });
 });
+
+describe('custom roles (Phase 4)', () => {
+  const createRole = (token: string, body: object) => as(token).post('/roles', body);
+
+  it('exposes the permission catalog to role readers only', async () => {
+    const res = await as(owner.token).get('/permissions').expect(200);
+    expect(res.body.permissions).toContainEqual({
+      key: 'document.read',
+      description: expect.any(String),
+      group: 'document',
+    });
+    await as(employee.token).get('/permissions').expect(403);
+  });
+
+  it('creates a custom role, assigns it, and the member gets exactly its permissions', async () => {
+    const role = (
+      await createRole(owner.token, {
+        name: 'Support Lead',
+        description: 'Handles escalations',
+        permissions: ['organization.read', 'user.read', 'role.read', 'document.read'],
+      }).expect(201)
+    ).body as RoleListResponse['roles'][number];
+    expect(role).toMatchObject({ key: 'SUPPORT_LEAD', isSystem: false, assignable: true, editable: true });
+
+    const member = await addMember(owner.token, 'EMPLOYEE');
+    await as(member.token).get('/roles').expect(403);
+    await as(owner.token)
+      .put(`/users/${member.userId}/roles`, { roleKeys: ['SUPPORT_LEAD'] })
+      .expect(200);
+    const me = (await as(member.token).get('/auth/me').expect(200)).body as MeResponse;
+    expect(me.roles).toEqual(['SUPPORT_LEAD']);
+    expect(me.permissions).toEqual(['document.read', 'organization.read', 'role.read', 'user.read']);
+    await as(member.token).get('/roles').expect(200);
+
+    // Deleting a role that is still assigned is refused; after reassignment it succeeds.
+    expect((await as(owner.token).delete(`/roles/${role.id}`).expect(409)).body.error.code).toBe(
+      'ROLE_IN_USE',
+    );
+    await as(owner.token)
+      .put(`/users/${member.userId}/roles`, { roleKeys: ['EMPLOYEE'] })
+      .expect(200);
+    await as(owner.token).delete(`/roles/${role.id}`).expect(204);
+  });
+
+  it('editing a custom role changes its holders’ access on their next request', async () => {
+    const role = (
+      await createRole(owner.token, { name: 'Readers', permissions: ['organization.read'] }).expect(201)
+    ).body;
+    const member = await addMember(owner.token, 'EMPLOYEE');
+    await as(owner.token)
+      .put(`/users/${member.userId}/roles`, { roleKeys: [role.key] })
+      .expect(200);
+    await as(member.token).get('/users').expect(403);
+    await as(owner.token)
+      .patch(`/roles/${role.id}`, { permissions: ['organization.read', 'user.read'] })
+      .expect(200);
+    await as(member.token).get('/users').expect(200);
+  });
+
+  it('ADMIN cannot create a role with permissions ADMIN lacks', async () => {
+    const res = await createRole(admin.token, {
+      name: 'Shadow Owner',
+      permissions: ['organization.read', 'organization.update'],
+    }).expect(403);
+    expect(res.body.error.code).toBe('ROLE_EXCEEDS_YOUR_ACCESS');
+  });
+
+  it('ADMIN cannot edit or delete a custom role that has more access than ADMIN', async () => {
+    const powerful = (
+      await createRole(owner.token, { name: 'Co Owner', permissions: ['organization.update'] }).expect(201)
+    ).body;
+    const edit = await as(admin.token).patch(`/roles/${powerful.id}`, { name: 'Downgraded' }).expect(403);
+    expect(edit.body.error.code).toBe('TARGET_HAS_MORE_ACCESS');
+    await as(admin.token).delete(`/roles/${powerful.id}`).expect(403);
+    const { roles } = (await as(admin.token).get('/roles').expect(200)).body as RoleListResponse;
+    expect(roles.find((r) => r.id === powerful.id)).toMatchObject({ assignable: false, editable: false });
+  });
+
+  it('ADMIN cannot sneak permissions into a role it may edit', async () => {
+    const role = (await createRole(admin.token, { name: 'Helpers', permissions: ['user.read'] }).expect(201))
+      .body;
+    const res = await as(admin.token)
+      .patch(`/roles/${role.id}`, { permissions: ['user.read', 'organization.update'] })
+      .expect(403);
+    expect(res.body.error.code).toBe('ROLE_EXCEEDS_YOUR_ACCESS');
+  });
+
+  it('nobody can edit a role they hold', async () => {
+    const role = (
+      await createRole(owner.token, {
+        name: 'Ops',
+        permissions: ['organization.read', 'role.read', 'role.update'],
+      }).expect(201)
+    ).body;
+    const member = await addMember(owner.token, 'EMPLOYEE');
+    await as(owner.token)
+      .put(`/users/${member.userId}/roles`, { roleKeys: [role.key] })
+      .expect(200);
+    const res = await as(member.token)
+      .patch(`/roles/${role.id}`, { permissions: ['organization.read'] })
+      .expect(403);
+    expect(res.body.error.code).toBe('SELF');
+  });
+
+  it('built-in roles are immutable', async () => {
+    const { roles } = (await as(owner.token).get('/roles').expect(200)).body as RoleListResponse;
+    const employeeRole = roles.find((r) => r.key === 'EMPLOYEE')!;
+    expect(employeeRole.editable).toBe(false);
+    const res = await as(owner.token).patch(`/roles/${employeeRole.id}`, { name: 'Staff' }).expect(409);
+    expect(res.body.error.code).toBe('SYSTEM_ROLE_IMMUTABLE');
+    await as(owner.token).delete(`/roles/${employeeRole.id}`).expect(409);
+  });
+
+  it('rejects names that collide with existing roles and unknown permissions', async () => {
+    expect(
+      (await createRole(owner.token, { name: 'Owner', permissions: ['user.read'] }).expect(409)).body.error
+        .code,
+    ).toBe('NAME_TAKEN');
+    await createRole(owner.token, { name: 'Weird', permissions: ['document.fly'] }).expect(400);
+  });
+
+  it('EMPLOYEE cannot create roles', async () => {
+    await createRole(employee.token, { name: 'Mine', permissions: ['user.read'] }).expect(403);
+  });
+
+  it('roles of another organization are invisible', async () => {
+    const role = (
+      await createRole(owner.token, { name: 'Private To A', permissions: ['user.read'] }).expect(201)
+    ).body;
+    await as(otherOwner.token).patch(`/roles/${role.id}`, { name: 'Hijacked' }).expect(404);
+    await as(otherOwner.token).delete(`/roles/${role.id}`).expect(404);
+    const { roles } = (await as(otherOwner.token).get('/roles').expect(200)).body as RoleListResponse;
+    expect(roles.map((r) => r.id)).not.toContain(role.id);
+    // And cannot be assigned to members of another organization.
+    await as(otherOwner.token)
+      .put(`/users/${otherOwner.userId}/roles`, { roleKeys: ['PRIVATE_TO_A'] })
+      .expect(404);
+  });
+});

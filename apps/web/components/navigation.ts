@@ -36,11 +36,11 @@ export const MAIN_NAV: NavItem[] = [
 
 export const ADMIN_NAV: NavItem[] = [
   { label: 'Users', href: '/admin/users', icon: Users, requires: 'user.create' },
-  { label: 'Roles', href: '/admin/roles', icon: UserCog, requires: 'role.update', comingIn: 4 },
+  { label: 'Roles', href: '/admin/roles', icon: UserCog, requires: 'role.update' },
   { label: 'Departments', href: '/admin/departments', icon: Building2, requires: 'department.manage' },
   { label: 'Teams', href: '/admin/teams', icon: UsersRound, requires: 'team.manage' },
   { label: 'Documents', href: '/admin/documents', icon: FileText, requires: 'document.share', comingIn: 5 },
-  { label: 'Permissions', href: '/admin/permissions', icon: KeyRound, requires: 'role.update', comingIn: 4 },
+  { label: 'Permissions', href: '/admin/permissions', icon: KeyRound, requires: 'role.update' },
   { label: 'Audit Logs', href: '/admin/audit', icon: ScrollText, requires: 'audit.read', comingIn: 9 },
   { label: 'Analytics', href: '/admin/analytics', icon: BarChart3, requires: 'audit.read', comingIn: 9 },
 ];

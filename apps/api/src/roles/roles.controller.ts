@@ -1,47 +1,61 @@
-import { Controller, Get } from '@nestjs/common';
-import type { RoleListResponse } from '@knowguard/types';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
+import type { PermissionListResponse, RoleListResponse, RoleSummary } from '@knowguard/types';
+import {
+  type CreateRoleInput,
+  createRoleSchema,
+  type UpdateRoleInput,
+  updateRoleSchema,
+} from '@knowguard/validation';
 
 import type { AuthContext } from '../auth/auth-context';
 import { CurrentAuth } from '../auth/auth.decorators';
-import { isSubset } from '../authorization/management-policy';
 import { RequirePermission } from '../authorization/require-permission.decorator';
-import { PrismaService } from '../common/prisma.service';
+import { ParseIdPipe } from '../common/parse-id.pipe';
+import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import { RolesService } from './roles.service';
 
-/** Read-only in Phase 3; custom role management (role.create/update/delete) is Phase 4. */
-@Controller('roles')
+const roleId = new ParseIdPipe('role');
+
+@Controller()
 export class RolesController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly roles: RolesService) {}
 
-  @Get()
+  /** The permission catalog, for the role editor. */
+  @Get('permissions')
+  @RequirePermission('role.read')
+  permissions(): PermissionListResponse {
+    return { permissions: this.roles.listPermissions() };
+  }
+
+  @Get('roles')
   @RequirePermission('role.read')
   async list(@CurrentAuth() auth: AuthContext): Promise<RoleListResponse> {
-    const roles = await this.prisma.role.findMany({
-      where: { organizationId: auth.organizationId },
-      orderBy: [{ isSystem: 'desc' }, { createdAt: 'asc' }],
-      select: {
-        id: true,
-        key: true,
-        name: true,
-        description: true,
-        isSystem: true,
-        permissions: { select: { permission: { select: { key: true } } } },
-        _count: { select: { users: true } },
-      },
-    });
-    return {
-      roles: roles.map((role) => {
-        const permissions = role.permissions.map((grant) => grant.permission.key).sort();
-        return {
-          id: role.id,
-          key: role.key,
-          name: role.name,
-          description: role.description,
-          isSystem: role.isSystem,
-          permissions,
-          memberCount: role._count.users,
-          assignable: isSubset(permissions, auth.permissions),
-        };
-      }),
-    };
+    return { roles: await this.roles.list(auth) };
+  }
+
+  @Post('roles')
+  @RequirePermission('role.create')
+  create(
+    @CurrentAuth() auth: AuthContext,
+    @Body(new ZodValidationPipe(createRoleSchema)) body: CreateRoleInput,
+  ): Promise<RoleSummary> {
+    return this.roles.create(auth, body);
+  }
+
+  @Patch('roles/:id')
+  @RequirePermission('role.update')
+  update(
+    @CurrentAuth() auth: AuthContext,
+    @Param('id', roleId) id: string,
+    @Body(new ZodValidationPipe(updateRoleSchema)) body: UpdateRoleInput,
+  ): Promise<RoleSummary> {
+    return this.roles.update(auth, id, body);
+  }
+
+  @Delete('roles/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @RequirePermission('role.delete')
+  async remove(@CurrentAuth() auth: AuthContext, @Param('id', roleId) id: string): Promise<void> {
+    await this.roles.remove(auth, id);
   }
 }

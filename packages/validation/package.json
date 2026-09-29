@@ -20,6 +20,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@knowguard/authorization": "workspace:*",
     "zod": "4.6.5"
   },
   "devDependencies": {
