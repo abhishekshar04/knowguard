@@ -113,6 +113,18 @@ export async function setVisibilityAction(_prev: ActionResult, form: FormData): 
   );
 }
 
+export async function reindexDocumentAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
+  const token = await getSessionToken();
+  if (!token) return SESSION_ENDED;
+  try {
+    await apiRequest(`${documentPath(form)}/reindex`, { method: 'POST', token });
+  } catch (error) {
+    return errorResult(error);
+  }
+  revalidatePath(documentPath(form));
+  return { ok: true, message: 'Indexing restarted.' };
+}
+
 export async function deleteDocumentAction(_prev: ActionResult, form: FormData): Promise<ActionResult> {
   const token = await getSessionToken();
   if (!token) return SESSION_ENDED;

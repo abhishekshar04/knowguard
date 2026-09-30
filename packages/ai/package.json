@@ -16,8 +16,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test": "jest"
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "dependencies": {
+    "@huggingface/transformers": "4.3.0"
+  },
+  "devDependencies": {
+    "@types/jest": "30.0.0",
+    "jest": "30.5.2",
+    "ts-jest": "29.4.14"
+  }
 }

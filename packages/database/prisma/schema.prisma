@@ -333,6 +333,9 @@ model Document {
   mimeType         String             @map("mime_type") @db.VarChar(127)
   size             Int
   storageKey       String             @map("storage_key") @db.VarChar(512)
+  /// Last ingestion failure, shown to editors (never contains document content).
+  processingError  String?            @map("processing_error") @db.VarChar(500)
+  indexedAt        DateTime?          @map("indexed_at") @db.Timestamptz(3)
   createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -342,6 +345,7 @@ model Document {
   versions     DocumentVersion[]
   permissions  DocumentPermission[]
   audience     DocumentAudience[]
+  chunks       DocumentChunk[]
 
   @@unique([id, organizationId])
   @@index([organizationId, visibility])
@@ -367,6 +371,7 @@ model DocumentVersion {
 
   document  Document         @relation(fields: [documentId, organizationId], references: [id, organizationId], onDelete: Cascade)
   createdBy UserOrganization @relation(fields: [createdById, organizationId], references: [userId, organizationId], onDelete: Restrict)
+  chunks    DocumentChunk[]
 
   @@unique([documentId, version])
   @@unique([id, organizationId])
@@ -406,4 +411,30 @@ model DocumentPermission {
   @@unique([documentId, subjectType, subjectId, permission])
   @@index([organizationId, subjectType, subjectId])
   @@map("document_permissions")
+}
+
+/// A retrievable piece of one document version (spec §18). Every chunk carries its tenant,
+/// document and version, so retrieval can always apply the document's access rules and cite
+/// the exact source. Only the ACTIVE version of a document has chunks.
+model DocumentChunk {
+  id             String                      @id @default(uuid(7)) @db.Uuid
+  organizationId String                      @map("organization_id") @db.Uuid
+  documentId     String                      @map("document_id") @db.Uuid
+  versionId      String                      @map("version_id") @db.Uuid
+  chunkIndex     Int                         @map("chunk_index")
+  content        String                      @db.Text
+  tokenCount     Int                         @map("token_count")
+  /// { pageStart?, pageEnd?, headingPath: string[], heading?, section? }
+  metadata       Json                        @default("{}")
+  /// Normalized embedding (cosine). Dimension is fixed by the configured model (ADR 0009).
+  embedding      Unsupported("vector(384)")?
+  embeddingModel String                      @map("embedding_model") @db.VarChar(100)
+  createdAt      DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  document Document        @relation(fields: [documentId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  version  DocumentVersion @relation(fields: [versionId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@unique([versionId, chunkIndex])
+  @@index([organizationId, documentId])
+  @@map("document_chunks")
 }

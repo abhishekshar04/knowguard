@@ -65,6 +65,8 @@ const summarySelect = {
   size: true,
   currentVersion: true,
   currentVersionId: true,
+  processingError: true,
+  indexedAt: true,
   storageKey: true,
   createdAt: true,
   updatedAt: true,
@@ -167,6 +169,9 @@ export class DocumentsService {
     return {
       ...this.toSummary(row, context),
       createdAt: row.createdAt.toISOString(),
+      chunkCount: await this.prisma.documentChunk.count({
+        where: { documentId: id, organizationId: auth.organizationId },
+      }),
       versions: versions.map((version) => ({
         id: version.id,
         version: version.version,
@@ -438,6 +443,32 @@ export class DocumentsService {
     await this.deleteObjectsQuietly(versions.map((v) => v.storageKey));
   }
 
+  /**
+   * Re-runs ingestion for the current version (requires WRITE): recovers FAILED documents and
+   * re-embeds after model or chunker changes. Idempotent in the worker.
+   */
+  async reindex(auth: AuthContext, id: string): Promise<DocumentDetails> {
+    const row = await this.requireAccess(toAuthorizationContext(auth), id, 'WRITE');
+    if (!row.currentVersionId) throw notFound('document version');
+    const queued = await this.ingestion.enqueueReindexDocument({
+      organizationId: auth.organizationId,
+      documentId: id,
+      versionId: row.currentVersionId,
+    });
+    if (!queued) {
+      throw new ApiException(
+        'QUEUE_UNAVAILABLE',
+        'Indexing is temporarily unavailable. Please try again shortly.',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    await this.prisma.document.updateMany({
+      where: { id, organizationId: auth.organizationId, currentVersionId: row.currentVersionId },
+      data: { status: 'PROCESSING', processingError: null },
+    });
+    return this.get(auth, id);
+  }
+
   // ── access helpers ───────────────────────────────────────────────────────────────────
 
   /**
@@ -477,6 +508,8 @@ export class DocumentsService {
       size: row.size,
       version: row.currentVersion,
       updatedAt: row.updatedAt.toISOString(),
+      processingError: row.processingError,
+      indexedAt: row.indexedAt?.toISOString() ?? null,
       capabilities: this.capabilities(context, toProtectedResource(row)),
     };
   }

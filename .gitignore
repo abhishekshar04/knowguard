@@ -17,3 +17,5 @@ Thumbs.db
 test-results/
 playwright-report/
 blob-report/
+# Local model caches (the default location is ~/.cache/knowguard/models)
+.cache/

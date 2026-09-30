@@ -6,7 +6,7 @@ Permission-aware enterprise knowledge platform. The core invariant:
 
 Authorization happens **before** retrieval and context construction — never by asking an LLM to withhold information.
 
-**Status: Phase 5 (documents).** Upload PDF, DOCX, Markdown and text files to S3-compatible storage (type checked from the bytes, SHA-256 fingerprinted, immutable versions). Documents have per-document visibility and allow/deny sharing, and every read, edit, share and download goes through the authorization engine. Listing uses a SQL filter proven equivalent to the engine by randomized tests. Uploads queue ingestion jobs for Phase 6 (text extraction and embeddings).
+**Status: Phase 6 (ingestion).** Uploaded documents are indexed in the background. The worker extracts text from PDF (per page), DOCX, Markdown and plain text, splits it into chunks that keep headings, sections and page numbers, and embeds each chunk with a **local** model (bge-small, 384 dimensions), so document text never leaves your infrastructure. Chunks go into pgvector, and documents move from processing to ready or failed, with a reindex button. Everything from Phases 1–5 still applies: tenant isolation, the authorization engine, documents and versions, permission-aware listing. Next: search (Phase 7).
 
 ## How authentication works
 
@@ -79,27 +79,29 @@ Then open http://localhost:3000. You can create a new organization at `/register
 
 All configuration lives in the repo-root `.env` (template: [.env.example](.env.example)). Apps validate their environment at startup with zod and refuse to boot on invalid config; error messages name the variable but never echo its value.
 
-| Variable                                                             | Used by                | Purpose                                                                 |
-| -------------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------- |
-| `NODE_ENV`                                                           | all                    | `development` \| `test` \| `production`                                 |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` | docker compose         | Postgres container                                                      |
-| `DATABASE_URL`                                                       | api, database          | Postgres connection string                                              |
-| `TEST_DATABASE_URL`                                                  | tests                  | Separate test database (name must contain `test`)                       |
-| `REDIS_PORT`, `REDIS_PASSWORD`                                       | docker compose         | Redis container (password required)                                     |
-| `REDIS_URL`                                                          | api, worker            | Redis connection string                                                 |
-| `API_PORT`                                                           | api                    | HTTP port (default 4000)                                                |
-| `SESSION_TTL_HOURS`                                                  | api                    | Absolute session lifetime (default 168)                                 |
-| `SESSION_IDLE_TIMEOUT_MINUTES`                                       | api                    | Idle session expiry (default 1440)                                      |
-| `TRUST_PROXY`                                                        | api                    | Hops trusted to set X-Forwarded-For (see ADR 0005)                      |
-| `LOG_LEVEL`                                                          | api, worker            | pino level                                                              |
-| `WORKER_CONCURRENCY`                                                 | worker                 | Parallel jobs (default 4)                                               |
-| `API_URL`                                                            | web (server-side only) | Base URL of the API                                                     |
-| `SESSION_COOKIE_SECURE`                                              | web                    | Force the Secure cookie flag on/off (default: production only)          |
-| `STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_BUCKET`               | api                    | S3-compatible object storage (omit the endpoint for AWS S3)             |
-| `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`                 | api, docker compose    | Storage credentials                                                     |
-| `STORAGE_FORCE_PATH_STYLE`, `STORAGE_AUTO_CREATE_BUCKET`             | api                    | Path-style URLs (SeaweedFS/MinIO); create the bucket on boot (dev only) |
-| `MAX_UPLOAD_MB`                                                      | api                    | Upload size limit (default 25)                                          |
-| `SEED_USER_PASSWORD`                                                 | seed                   | Password for seeded demo users (≥ 12 chars)                             |
+| Variable                                                                  | Used by                | Purpose                                                                                                  |
+| ------------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                                                                | all                    | `development` \| `test` \| `production`                                                                  |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT`      | docker compose         | Postgres container                                                                                       |
+| `DATABASE_URL`                                                            | api, database          | Postgres connection string                                                                               |
+| `TEST_DATABASE_URL`                                                       | tests                  | Separate test database (name must contain `test`)                                                        |
+| `REDIS_PORT`, `REDIS_PASSWORD`                                            | docker compose         | Redis container (password required)                                                                      |
+| `REDIS_URL`                                                               | api, worker            | Redis connection string                                                                                  |
+| `API_PORT`                                                                | api                    | HTTP port (default 4000)                                                                                 |
+| `SESSION_TTL_HOURS`                                                       | api                    | Absolute session lifetime (default 168)                                                                  |
+| `SESSION_IDLE_TIMEOUT_MINUTES`                                            | api                    | Idle session expiry (default 1440)                                                                       |
+| `TRUST_PROXY`                                                             | api                    | Hops trusted to set X-Forwarded-For (see ADR 0005)                                                       |
+| `LOG_LEVEL`                                                               | api, worker            | pino level                                                                                               |
+| `API_URL`                                                                 | web (server-side only) | Base URL of the API                                                                                      |
+| `SESSION_COOKIE_SECURE`                                                   | web                    | Force the Secure cookie flag on/off (default: production only)                                           |
+| `STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_BUCKET`                    | api                    | S3-compatible object storage (omit the endpoint for AWS S3)                                              |
+| `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`                      | api, docker compose    | Storage credentials                                                                                      |
+| `STORAGE_FORCE_PATH_STYLE`, `STORAGE_AUTO_CREATE_BUCKET`                  | api                    | Path-style URLs (SeaweedFS/MinIO); create the bucket on boot (dev only)                                  |
+| `MAX_UPLOAD_MB`                                                           | api                    | Upload size limit (default 25)                                                                           |
+| `EMBEDDING_MODEL`, `EMBEDDING_CACHE_DIR`, `EMBEDDING_ALLOW_REMOTE_MODELS` | worker                 | Local embedding model, its cache (default `~/.cache/knowguard/models`), and whether it may be downloaded |
+| `WORKER_CONCURRENCY`                                                      | worker                 | Parallel ingestion jobs (default 2)                                                                      |
+| `QUEUE_PREFIX`                                                            | api, worker            | BullMQ key prefix; environments sharing a Redis must differ                                              |
+| `SEED_USER_PASSWORD`                                                      | seed                   | Password for seeded demo users (≥ 12 chars)                                                              |
 
 ## Architecture decisions
 
@@ -113,6 +115,7 @@ See [docs/adr](docs/adr):
 6. [Minimal RBAC, invitations and organization structure](docs/adr/0006-rbac-invitations-and-organization-structure.md)
 7. [Authorization engine and custom roles](docs/adr/0007-authorization-engine.md)
 8. [Documents, storage and query-level access control](docs/adr/0008-documents-storage-and-access.md)
+9. [Ingestion pipeline and local embeddings](docs/adr/0009-ingestion-and-embeddings.md)
 
 ## Deploying: required
 

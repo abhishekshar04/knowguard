@@ -26,6 +26,9 @@ env:
   STORAGE_SECRET_ACCESS_KEY: knowguard_ci_secret
   STORAGE_FORCE_PATH_STYLE: 'true'
   STORAGE_AUTO_CREATE_BUCKET: 'true'
+  # Local embedding model (ADR 0009); cached between runs by the step below.
+  EMBEDDING_MODEL: Xenova/bge-small-en-v1.5
+  QUEUE_PREFIX: knowguard-ci
   TURBO_TELEMETRY_DISABLED: 1
 
 jobs:
@@ -61,6 +64,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+
+      - name: Cache embedding model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/knowguard/models
+          key: embedding-model-${{ env.EMBEDDING_MODEL }}
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

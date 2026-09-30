@@ -130,6 +130,13 @@ export class DocumentsController {
     return this.documents.addVersion(auth, id, file);
   }
 
+  @Post(':id/reindex')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @RequirePermission('document.update')
+  reindex(@CurrentAuth() auth: AuthContext, @Param('id', documentId) id: string): Promise<DocumentDetails> {
+    return this.documents.reindex(auth, id);
+  }
+
   @Put(':id/visibility')
   @RequirePermission('document.share')
   setVisibility(

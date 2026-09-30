@@ -16,6 +16,7 @@ export class IngestionQueue implements OnModuleDestroy {
   constructor(@Inject(API_ENV) env: ApiEnv) {
     const url = new URL(env.REDIS_URL);
     this.queue = new Queue(QUEUE_NAMES.ingestion, {
+      prefix: env.QUEUE_PREFIX,
       connection: {
         host: url.hostname,
         port: Number(url.port || 6379),
@@ -44,6 +45,21 @@ export class IngestionQueue implements OnModuleDestroy {
     } catch (error) {
       this.logger.error(
         `Could not enqueue ${INGESTION_JOBS.processDocument} for version ${job.versionId}: ${(error as Error).message}`,
+      );
+      return false;
+    }
+  }
+
+  /** A unique job ID per request, so a reindex is never de-duplicated against the upload job. */
+  async enqueueReindexDocument(job: ProcessDocumentJob): Promise<boolean> {
+    try {
+      await this.queue.add(INGESTION_JOBS.reindexDocument, job, {
+        jobId: `reindex-${job.versionId}-${Date.now()}`,
+      });
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Could not enqueue reindex for version ${job.versionId}: ${(error as Error).message}`,
       );
       return false;
     }

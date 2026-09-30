@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { ActionForm } from '@/components/admin/action-form';
+import { AutoRefresh } from '@/components/documents/auto-refresh';
 import {
   dateFormat,
   formatBytes,
@@ -26,6 +27,7 @@ import { loadSubjectOptions, type SubjectOptions } from '@/lib/subjects';
 import {
   addAclEntryAction,
   deleteDocumentAction,
+  reindexDocumentAction,
   removeAclEntryAction,
   setVisibilityAction,
   updateDocumentAction,
@@ -127,11 +129,15 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
             <Detail label="Last updated">{dateFormat.format(new Date(doc.updatedAt))}</Detail>
             <Detail label="Status">
               <StatusBadge status={doc.status} />
-              {doc.status === 'PROCESSING' ? (
-                <span className="block text-xs text-muted-foreground">
-                  Queued for search indexing (Phase 6).
-                </span>
-              ) : null}
+              <span className="block text-xs text-muted-foreground" data-testid="indexing-detail">
+                {doc.status === 'READY'
+                  ? `${doc.chunkCount} passage${doc.chunkCount === 1 ? '' : 's'} indexed${
+                      doc.indexedAt ? ` · ${dateFormat.format(new Date(doc.indexedAt))}` : ''
+                    }`
+                  : doc.status === 'FAILED'
+                    ? (doc.processingError ?? 'Indexing failed.')
+                    : 'Extracting and indexing text…'}
+              </span>
             </Detail>
             <Detail label="Type">{doc.mimeType}</Detail>
             <Detail label="Size">{formatBytes(doc.size)}</Detail>
@@ -143,6 +149,19 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
           </dl>
         </CardContent>
       </Card>
+
+      <AutoRefresh
+        active={doc.status === 'UPLOADING' || doc.status === 'PROCESSING' || doc.status === 'INDEXING'}
+      />
+      {doc.capabilities.write && (doc.status === 'FAILED' || doc.status === 'READY') ? (
+        <ActionForm
+          action={reindexDocumentAction}
+          hidden={{ documentId: doc.id }}
+          submitLabel={doc.status === 'FAILED' ? 'Retry indexing' : 'Reindex'}
+          variant="outline"
+          className="self-start"
+        />
+      ) : null}
 
       <Card>
         <CardHeader>
