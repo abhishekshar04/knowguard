@@ -54,7 +54,9 @@ test('upload, preview, download, and organization-wide reading', async ({ page, 
     visibility: 'Whole organization — Every member.',
   });
   await expect(page.getByTestId('document-preview')).toContainText('Run the pipeline.');
-  await expect(page.getByTestId('document-status')).toHaveText('processing');
+  // The worker indexes it in the background; the page refreshes itself until it is ready.
+  await expect(page.getByTestId('document-status')).toHaveText('ready', { timeout: 60_000 });
+  await expect(page.getByTestId('indexing-detail')).toContainText('passage');
   await expect(page.getByTestId('versions')).toContainText('deploy.md');
 
   // Download goes through the BFF with the session cookie and returns the exact bytes.
@@ -131,4 +133,25 @@ test('unsupported files are rejected with a clear message', async ({ page }) => 
   await expect(page.getByTestId('action-error')).toHaveText(
     'Only PDF, Word (.docx), Markdown and plain-text files are supported.',
   );
+});
+
+test('a document that cannot be read ends up FAILED with a reason and a retry button', async ({ page }) => {
+  await registerViaUi(page, { organizationName: 'Broken Co' });
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await page.goto('/documents');
+  // Passes the upload signature check, but is not a readable PDF.
+  await page.setInputFiles('#upload-file', {
+    name: 'broken.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.7\nthis is not really a pdf'),
+  });
+  await page.getByLabel('Title').fill('Broken PDF');
+  await page.getByRole('button', { name: 'Upload' }).click();
+  await expect(page).toHaveURL(/\/documents\/[0-9a-f-]{36}$/);
+
+  await expect(page.getByTestId('document-status')).toHaveText('failed', { timeout: 60_000 });
+  await expect(page.getByTestId('indexing-detail')).toHaveText(
+    'The PDF could not be read. It may be corrupt or password-protected.',
+  );
+  await expect(page.getByRole('button', { name: 'Retry indexing' })).toBeVisible();
 });

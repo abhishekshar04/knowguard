@@ -37,7 +37,10 @@ export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
 
 /** Ingestion job names (spec §17). Producers: API. Consumer: worker (Phase 6). */
 export const INGESTION_JOBS = {
+  /** Index a newly uploaded version (extract → chunk → embed → store). */
   processDocument: 'PROCESS_DOCUMENT',
+  /** Re-run the pipeline for the current version (failed ingestion, model or chunker changes). */
+  reindexDocument: 'REINDEX_DOCUMENT',
 } as const;
 
 export interface ProcessDocumentJob {
@@ -224,6 +227,10 @@ export interface DocumentSummary {
   size: number;
   version: number;
   updatedAt: string;
+  /** User-safe reason when status is FAILED. */
+  processingError: string | null;
+  /** When the current version finished indexing (searchable from then on). */
+  indexedAt: string | null;
   capabilities: DocumentCapabilities;
 }
 
@@ -260,6 +267,8 @@ export interface AclEntryView {
 
 export interface DocumentDetails extends DocumentSummary {
   createdAt: string;
+  /** Number of indexed chunks of the current version. */
+  chunkCount: number;
   versions: DocumentVersionSummary[];
   audience: SubjectRef[];
   /** Only present when the caller may SHARE (manage access to) the document. */

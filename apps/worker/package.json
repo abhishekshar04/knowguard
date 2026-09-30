@@ -7,20 +7,28 @@
     "dev": "dotenv -e ../../.env -- tsx watch src/main.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json",
-    "lint": "eslint src",
-    "test": "jest"
+    "lint": "eslint src test",
+    "test": "dotenv -v NODE_OPTIONS=--experimental-vm-modules -- jest --testPathIgnorePatterns=int-spec",
+    "test:e2e": "dotenv -e ../../.env -v NODE_OPTIONS=--experimental-vm-modules -- jest --testPathPatterns=int-spec --runInBand"
   },
   "dependencies": {
+    "@knowguard/ai": "workspace:*",
+    "@knowguard/database": "workspace:*",
     "@knowguard/logger": "workspace:*",
+    "@knowguard/storage": "workspace:*",
     "@knowguard/types": "workspace:*",
     "@knowguard/validation": "workspace:*",
     "bullmq": "6.3.10",
-    "ioredis": "5.11.1"
+    "ioredis": "5.11.1",
+    "mammoth": "1.13.0",
+    "unpdf": "1.8.1"
   },
   "devDependencies": {
     "@types/jest": "30.0.0",
     "dotenv-cli": "11.0.0",
     "jest": "30.5.2",
+    "jszip": "3.10.2",
+    "pdf-lib": "1.17.1",
     "ts-jest": "29.4.14",
     "tsx": "4.23.15"
   }

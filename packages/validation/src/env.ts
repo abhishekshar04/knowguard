@@ -28,6 +28,17 @@ const storageEnvShape = {
   STORAGE_AUTO_CREATE_BUCKET: booleanFlag,
 };
 
+/**
+ * BullMQ key prefix. Environments sharing one Redis (dev, tests, CI) use different prefixes so
+ * a worker never consumes another environment's jobs.
+ */
+const queueEnvShape = {
+  QUEUE_PREFIX: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{0,40}$/, 'must be lowercase letters, digits and hyphens')
+    .default('knowguard'),
+};
+
 export const apiEnvSchema = z.object({
   NODE_ENV: nodeEnv,
   LOG_LEVEL: logLevel,
@@ -55,16 +66,36 @@ export const apiEnvSchema = z.object({
    */
   TRUST_PROXY: z.string().min(1).default('loopback'),
   ...storageEnvShape,
+  ...queueEnvShape,
   MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(512).default(25),
 });
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
+
+/** Local embedding model (ADR 0009). Shared by the worker (documents) and, later, the API (queries). */
+export const embeddingEnvShape = {
+  EMBEDDING_MODEL: z.string().min(1).default('Xenova/bge-small-en-v1.5'),
+  /** Model file cache. Defaults to ~/.cache/knowguard/models when unset. */
+  EMBEDDING_CACHE_DIR: z.string().min(1).optional(),
+  /**
+   * Allow downloading the model from the Hugging Face Hub when it is not cached. Set false in
+   * production after pre-provisioning the cache, so the worker needs no outbound network.
+   */
+  EMBEDDING_ALLOW_REMOTE_MODELS: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
+};
 
 export const workerEnvSchema = z.object({
   NODE_ENV: nodeEnv,
   LOG_LEVEL: logLevel,
   DATABASE_URL: postgresUrl,
   REDIS_URL: redisUrl,
-  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
+  /** Ingestion is CPU-bound (parsing + embedding); keep this near the number of cores. */
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(2),
+  ...storageEnvShape,
+  ...queueEnvShape,
+  ...embeddingEnvShape,
 });
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;
 

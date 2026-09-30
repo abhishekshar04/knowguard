@@ -13,6 +13,10 @@ const API_URL = `http://localhost:${API_PORT}`;
 export const OFFLINE_WEB_PORT = 3101;
 const UNREACHABLE_API_URL = 'http://localhost:9'; // discard port; nothing listens there
 
+/** Isolated from any dev stack sharing the same Redis and object store. */
+const QUEUE_PREFIX = 'knowguard-browser-test';
+const TEST_BUCKET = `${process.env.STORAGE_BUCKET ?? 'knowguard-documents'}-test`;
+
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 if (!testDatabaseUrl) throw new Error('TEST_DATABASE_URL must be set for browser tests');
 
@@ -39,8 +43,24 @@ export default defineConfig({
         API_PORT: String(API_PORT),
         DATABASE_URL: testDatabaseUrl,
         LOG_LEVEL: 'warn',
-        STORAGE_BUCKET: `${process.env.STORAGE_BUCKET ?? 'knowguard-documents'}-test`,
+        STORAGE_BUCKET: TEST_BUCKET,
         STORAGE_AUTO_CREATE_BUCKET: 'true',
+        QUEUE_PREFIX,
+      },
+    },
+    {
+      // The ingestion worker has no HTTP port: it is ready once it logs "Worker ready".
+      command: 'node ../worker/dist/main.js',
+      wait: { stdout: /Worker ready/ },
+      reuseExistingServer: false,
+      timeout: 180_000, // first run may download the embedding model
+      env: {
+        ...(process.env as Record<string, string>),
+        NODE_ENV: 'production',
+        DATABASE_URL: testDatabaseUrl,
+        LOG_LEVEL: 'info',
+        STORAGE_BUCKET: TEST_BUCKET,
+        QUEUE_PREFIX,
       },
     },
     {

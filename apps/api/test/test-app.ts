@@ -20,6 +20,8 @@ export async function createTestApp(): Promise<{ app: INestApplication; prisma: 
     STORAGE_BUCKET: `${process.env.STORAGE_BUCKET ?? 'knowguard-documents'}-test`,
     STORAGE_AUTO_CREATE_BUCKET: 'true',
     MAX_UPLOAD_MB: '2',
+    // Never share queues with a dev worker on the same Redis.
+    QUEUE_PREFIX: 'knowguard-test',
   });
   const moduleRef = await Test.createTestingModule({ imports: [AppModule.forRoot(env)] }).compile();
   const app = moduleRef.createNestApplication({ bodyParser: false, logger: false });

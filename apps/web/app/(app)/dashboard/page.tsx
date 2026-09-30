@@ -21,7 +21,7 @@ const ROADMAP = [
   { phase: 7, name: 'Search', detail: 'Keyword, vector, hybrid' },
   { phase: 8, name: 'AI', detail: 'Permission-aware RAG with citations' },
 ] as const;
-const CURRENT_PHASE = 5;
+const CURRENT_PHASE = 6;
 
 function StatusRow({ label, status }: { label: string; status: DependencyStatus | 'unreachable' }) {
   const up = status === 'up';

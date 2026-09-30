@@ -79,6 +79,7 @@ beforeAll(async () => {
   api = new TestClient(app, prisma);
   const redisUrl = new URL(process.env.REDIS_URL!);
   queue = new Queue(QUEUE_NAMES.ingestion, {
+    prefix: 'knowguard-test',
     connection: {
       host: redisUrl.hostname,
       port: Number(redisUrl.port || 6379),
@@ -454,5 +455,38 @@ describe('versions and deletion', () => {
     await api.as(owner.token).delete(`/teams/${team.id}`).expect(204);
     expect(await prisma.documentPermission.count({ where: { subjectId: team.id } })).toBe(0);
     expect(await prisma.documentAudience.count({ where: { targetId: team.id } })).toBe(0);
+  });
+});
+
+describe('reindexing (Phase 6)', () => {
+  it('queues a REINDEX_DOCUMENT job for the current version and resets the status', async () => {
+    const doc = await createDoc(owner.token, { visibility: 'ORGANIZATION' });
+    expect(doc).toMatchObject({ chunkCount: 0, processingError: null, indexedAt: null });
+    await prisma.document.update({
+      where: { id: doc.id },
+      data: { status: 'FAILED', processingError: 'boom' },
+    });
+
+    const res = await api.as(owner.token).post(`/documents/${doc.id}/reindex`).expect(202);
+    expect(res.body).toMatchObject({ status: 'PROCESSING', processingError: null });
+
+    const jobs = await queue.getJobs(['waiting', 'delayed', 'prioritized']);
+    const reindex = jobs.find(
+      (j) => j.name === INGESTION_JOBS.reindexDocument && j.data.documentId === doc.id,
+    );
+    expect(reindex?.data).toEqual({
+      organizationId: owner.organizationId,
+      documentId: doc.id,
+      versionId: doc.versions[0]!.id,
+    });
+  });
+
+  it('requires WRITE on the document, and is invisible across tenants', async () => {
+    const doc = await createDoc(owner.token, { visibility: 'ORGANIZATION' });
+    expect(
+      (await api.as(manager.token).post(`/documents/${doc.id}/reindex`).expect(403)).body.error.code,
+    ).toBe('DOCUMENT_ACCESS_DENIED');
+    await api.as(employee.token).post(`/documents/${doc.id}/reindex`).expect(403); // no document.update
+    await api.as(outsider.token).post(`/documents/${doc.id}/reindex`).expect(404);
   });
 });
