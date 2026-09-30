@@ -12,6 +12,7 @@
     "test:e2e": "dotenv -e ../../.env -- jest --config test/jest-e2e.config.js --runInBand"
   },
   "dependencies": {
+    "@knowguard/ai": "workspace:*",
     "@knowguard/auth": "workspace:*",
     "@knowguard/authorization": "workspace:*",
     "@knowguard/database": "workspace:*",

@@ -24,7 +24,8 @@
     "db:seed": "dotenv -e ../../.env -- prisma db seed",
     "db:reset": "dotenv -e ../../.env -- prisma migrate reset",
     "db:test:prepare": "dotenv -e ../../.env -- tsx scripts/prepare-test-database.ts",
-    "test:e2e": "dotenv -e ../../.env -- jest"
+    "test:e2e": "dotenv -e ../../.env -- jest",
+    "db:check-drift": "dotenv -e ../../.env -- tsx scripts/check-drift.ts"
   },
   "dependencies": {
     "@knowguard/authorization": "workspace:*",

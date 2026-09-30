@@ -41,6 +41,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@knowguard/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@knowguard/auth':
         specifier: workspace:*
         version: link:../../packages/auth

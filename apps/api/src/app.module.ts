@@ -9,6 +9,7 @@ import { InvitationsModule } from './invitations/invitations.module';
 import { MembersModule } from './members/members.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { RolesModule } from './roles/roles.module';
+import { SearchModule } from './search/search.module';
 import { StructureModule } from './structure/structure.module';
 
 /**
@@ -33,6 +34,7 @@ export class AppModule {
         RolesModule,
         StructureModule,
         DocumentsModule,
+        SearchModule,
         HealthModule,
       ],
     };

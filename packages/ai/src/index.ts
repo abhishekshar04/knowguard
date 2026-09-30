@@ -10,3 +10,4 @@ export {
   type LocalEmbeddingConfig,
   LocalEmbeddingProvider,
 } from './local-embedding-provider';
+export { DEFAULT_RERANKER_MODEL, LocalReranker, type LocalRerankerConfig, type Reranker } from './reranker';

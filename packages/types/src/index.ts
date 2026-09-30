@@ -274,3 +274,25 @@ export interface DocumentDetails extends DocumentSummary {
   /** Only present when the caller may SHARE (manage access to) the document. */
   acl: AclEntryView[] | null;
 }
+
+// ── Search (Phase 7) ─────────────────────────────────────────────────────────────────────
+
+/** One search hit: the best-matching passage of a document the caller may read. */
+export interface SearchResult {
+  documentId: string;
+  title: string;
+  /** Plain text (never HTML); highlight on the client by matching query terms. */
+  snippet: string;
+  /** Relevance in [0, 1]. */
+  score: number;
+  page: number | null;
+  section: string | null;
+  chunkId: string;
+  versionId: string;
+  version: number;
+}
+
+export interface SearchResponse {
+  query: string;
+  results: SearchResult[];
+}

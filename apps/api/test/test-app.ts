@@ -10,7 +10,10 @@ import { AppModule } from '../src/app.module';
 import { configureApp } from '../src/bootstrap';
 import { PrismaService } from '../src/common/prisma.service';
 
-export async function createTestApp(): Promise<{ app: INestApplication; prisma: PrismaService }> {
+/** `overrides` replace environment values (e.g. enable the reranker for search tests). */
+export async function createTestApp(
+  overrides: Record<string, string> = {},
+): Promise<{ app: INestApplication; prisma: PrismaService }> {
   const env = parseEnv(apiEnvSchema, {
     ...process.env,
     NODE_ENV: 'test',
@@ -22,6 +25,9 @@ export async function createTestApp(): Promise<{ app: INestApplication; prisma: 
     MAX_UPLOAD_MB: '2',
     // Never share queues with a dev worker on the same Redis.
     QUEUE_PREFIX: 'knowguard-test',
+    // The 283 MB reranker only loads where it is exercised (search tests pass an override).
+    RERANKER_MODEL: 'none',
+    ...overrides,
   });
   const moduleRef = await Test.createTestingModule({ imports: [AppModule.forRoot(env)] }).compile();
   const app = moduleRef.createNestApplication({ bodyParser: false, logger: false });
