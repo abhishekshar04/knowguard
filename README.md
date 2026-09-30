@@ -6,7 +6,7 @@ Permission-aware enterprise knowledge platform. The core invariant:
 
 Authorization happens **before** retrieval and context construction — never by asking an LLM to withhold information.
 
-**Status: Phase 6 (ingestion).** Uploaded documents are indexed in the background. The worker extracts text from PDF (per page), DOCX, Markdown and plain text, splits it into chunks that keep headings, sections and page numbers, and embeds each chunk with a **local** model (bge-small, 384 dimensions), so document text never leaves your infrastructure. Chunks go into pgvector, and documents move from processing to ready or failed, with a reindex button. Everything from Phases 1–5 still applies: tenant isolation, the authorization engine, documents and versions, permission-aware listing. Next: search (Phase 7).
+**Status: Phase 7 (search).** Permission-aware hybrid search. Only documents you are allowed to read are searched: the permission filter runs before retrieval, and every result is re-checked by the authorization engine. Keyword search (Postgres full-text, including exact IDs and error codes) and meaning-based search (pgvector) are merged and then reranked by a local cross-encoder; everything runs on your own servers. Results cite the document, version, section and page. It builds on Phases 1–6: tenant isolation, the authorization engine, documents, and local ingestion and embeddings. Next: Ask AI with citations (Phase 8).
 
 ## How authentication works
 
@@ -73,6 +73,7 @@ Then open http://localhost:3000. You can create a new organization at `/register
 | `pnpm db:migrate --name <name>`                      | Create and apply a new migration (dev)                                  |
 | `pnpm db:deploy`                                     | Apply pending migrations (CI/prod)                                      |
 | `pnpm db:seed`                                       | Idempotent development seed                                             |
+| `pnpm db:check-drift`                                | Fail if the database differs from `schema.prisma` (also runs in CI)     |
 | `pnpm infra:up` / `pnpm infra:down`                  | Start/stop Docker infrastructure                                        |
 
 ## Environment variables
@@ -99,6 +100,7 @@ All configuration lives in the repo-root `.env` (template: [.env.example](.env.e
 | `STORAGE_FORCE_PATH_STYLE`, `STORAGE_AUTO_CREATE_BUCKET`                  | api                    | Path-style URLs (SeaweedFS/MinIO); create the bucket on boot (dev only)                                  |
 | `MAX_UPLOAD_MB`                                                           | api                    | Upload size limit (default 25)                                                                           |
 | `EMBEDDING_MODEL`, `EMBEDDING_CACHE_DIR`, `EMBEDDING_ALLOW_REMOTE_MODELS` | worker                 | Local embedding model, its cache (default `~/.cache/knowguard/models`), and whether it may be downloaded |
+| `RERANKER_MODEL`                                                          | api                    | Local cross-encoder for search reranking (default bge-reranker-base; `none` disables)                    |
 | `WORKER_CONCURRENCY`                                                      | worker                 | Parallel ingestion jobs (default 2)                                                                      |
 | `QUEUE_PREFIX`                                                            | api, worker            | BullMQ key prefix; environments sharing a Redis must differ                                              |
 | `SEED_USER_PASSWORD`                                                      | seed                   | Password for seeded demo users (≥ 12 chars)                                                              |
@@ -116,6 +118,7 @@ See [docs/adr](docs/adr):
 7. [Authorization engine and custom roles](docs/adr/0007-authorization-engine.md)
 8. [Documents, storage and query-level access control](docs/adr/0008-documents-storage-and-access.md)
 9. [Ingestion pipeline and local embeddings](docs/adr/0009-ingestion-and-embeddings.md)
+10. [Permission-aware hybrid search](docs/adr/0010-permission-aware-hybrid-search.md)
 
 ## Deploying: required
 

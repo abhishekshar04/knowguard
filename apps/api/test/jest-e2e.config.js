@@ -4,7 +4,7 @@
  */
 module.exports = {
   rootDir: '..',
-  testEnvironment: 'node',
+  testEnvironment: '<rootDir>/../../tooling/jest/onnx-environment.js',
   roots: ['<rootDir>/test'],
   testMatch: ['**/*.e2e-spec.ts'],
   testTimeout: 30_000,

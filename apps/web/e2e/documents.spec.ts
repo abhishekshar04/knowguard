@@ -155,3 +155,39 @@ test('a document that cannot be read ends up FAILED with a reason and a retry bu
   );
   await expect(page.getByRole('button', { name: 'Retry indexing' })).toBeVisible();
 });
+
+test('search finds indexed documents the user may read — and nothing else', async ({ page, browser }) => {
+  await registerViaUi(page, { organizationName: 'Search Co' });
+  await expect(page).toHaveURL(/\/dashboard$/);
+  const reader = await inviteEmployee(page, browser, 'Sam Searcher');
+
+  const shared = await uploadViaUi(page, {
+    title: 'Incident Handbook',
+    content:
+      '# Incidents\n\nIf a payments release fails its smoke tests, revert it from the pipeline dashboard.',
+    filename: 'incidents.md',
+    visibility: 'Whole organization — Every member.',
+  });
+  await expect(page.getByTestId('document-status')).toHaveText('ready', { timeout: 60_000 });
+  await uploadViaUi(page, {
+    title: 'Board Minutes',
+    content: '# Minutes\n\nThe board discussed reverting the payments pipeline release policy.',
+    filename: 'minutes.md',
+    visibility: 'Private — Only you.',
+  });
+  await expect(page.getByTestId('document-status')).toHaveText('ready', { timeout: 60_000 });
+
+  await reader.page.goto('/search');
+  await reader.page.getByLabel('Search documents').fill('how do I revert a failed payments release');
+  await reader.page.getByRole('button', { name: 'Search' }).click();
+  const results = reader.page.getByTestId('search-results');
+  await expect(results).toContainText('Incident Handbook', { timeout: 30_000 });
+  await expect(results).not.toContainText('Board Minutes'); // private to the owner
+  await expect(results.locator('mark').first()).toBeVisible(); // query terms highlighted
+  // Queries stay out of the URL.
+  expect(reader.page.url()).not.toContain('revert');
+
+  await results.getByRole('link', { name: 'Incident Handbook' }).click();
+  await expect(reader.page).toHaveURL(shared);
+  await reader.context.close();
+});

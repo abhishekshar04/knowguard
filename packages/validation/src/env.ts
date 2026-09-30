@@ -39,6 +39,23 @@ const queueEnvShape = {
     .default('knowguard'),
 };
 
+/** Local embedding model (ADR 0009). Shared by the worker (documents) and, later, the API (queries). */
+export const embeddingEnvShape = {
+  EMBEDDING_MODEL: z.string().min(1).default('Xenova/bge-small-en-v1.5'),
+  /** Model file cache. Defaults to ~/.cache/knowguard/models when unset. */
+  EMBEDDING_CACHE_DIR: z.string().min(1).optional(),
+  /**
+   * Allow downloading the model from the Hugging Face Hub when it is not cached. Set false in
+   * production after pre-provisioning the cache, so the worker needs no outbound network.
+   */
+  EMBEDDING_ALLOW_REMOTE_MODELS: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
+  /** Cross-encoder used to rerank search candidates (ADR 0010); "none" disables reranking. */
+  RERANKER_MODEL: z.string().min(1).default('Xenova/bge-reranker-base'),
+};
+
 export const apiEnvSchema = z.object({
   NODE_ENV: nodeEnv,
   LOG_LEVEL: logLevel,
@@ -67,24 +84,10 @@ export const apiEnvSchema = z.object({
   TRUST_PROXY: z.string().min(1).default('loopback'),
   ...storageEnvShape,
   ...queueEnvShape,
+  ...embeddingEnvShape,
   MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(512).default(25),
 });
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
-
-/** Local embedding model (ADR 0009). Shared by the worker (documents) and, later, the API (queries). */
-export const embeddingEnvShape = {
-  EMBEDDING_MODEL: z.string().min(1).default('Xenova/bge-small-en-v1.5'),
-  /** Model file cache. Defaults to ~/.cache/knowguard/models when unset. */
-  EMBEDDING_CACHE_DIR: z.string().min(1).optional(),
-  /**
-   * Allow downloading the model from the Hugging Face Hub when it is not cached. Set false in
-   * production after pre-provisioning the cache, so the worker needs no outbound network.
-   */
-  EMBEDDING_ALLOW_REMOTE_MODELS: z
-    .enum(['true', 'false'])
-    .default('true')
-    .transform((value) => value === 'true'),
-};
 
 export const workerEnvSchema = z.object({
   NODE_ENV: nodeEnv,

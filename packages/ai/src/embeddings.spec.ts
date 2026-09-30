@@ -1,7 +1,13 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { assertDimensions, HashEmbeddingProvider, LocalEmbeddingProvider, toVectorLiteral } from './index';
+import {
+  assertDimensions,
+  HashEmbeddingProvider,
+  LocalEmbeddingProvider,
+  LocalReranker,
+  toVectorLiteral,
+} from './index';
 
 const dot = (a: number[], b: number[]) => a.reduce((sum, value, i) => sum + value * b[i]!, 0);
 
@@ -54,5 +60,27 @@ describe('LocalEmbeddingProvider (real model)', () => {
   it('batches large inputs', async () => {
     const texts = Array.from({ length: 40 }, (_, i) => `Paragraph number ${i} about topic ${i % 5}.`);
     expect(await provider.embedDocuments(texts)).toHaveLength(40);
+  });
+});
+
+describe('LocalReranker (real model)', () => {
+  const reranker = new LocalReranker({
+    cacheDir: process.env.EMBEDDING_CACHE_DIR ?? join(homedir(), '.cache', 'knowguard', 'models'),
+    allowRemoteModels: true,
+  });
+
+  it('scores the passage that answers the question highest, in [0, 1]', async () => {
+    const scores = await reranker.score('How do I roll back a failed payments release?', [
+      'Holiday policy: employees receive 25 days of annual leave.',
+      'If smoke tests fail, revert the release from the pipeline dashboard within five minutes.',
+      'The payments service is deployed by promoting a release in the pipeline.',
+    ]);
+    expect(scores).toHaveLength(3);
+    expect(scores.every((s) => s >= 0 && s <= 1)).toBe(true);
+    expect(scores.indexOf(Math.max(...scores))).toBe(1);
+  });
+
+  it('returns nothing for no passages', async () => {
+    expect(await reranker.score('anything', [])).toEqual([]);
   });
 });
