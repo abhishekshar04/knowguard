@@ -2,3 +2,5 @@
 *.png binary
 *.jpg binary
 *.ico binary
+# Generated knowledge graph: hide from diffs and language stats.
+graphify-out/** linguist-generated=true -diff
