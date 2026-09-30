@@ -22,6 +22,7 @@ export interface HealthResponse {
   checks: {
     database: DependencyStatus;
     redis: DependencyStatus;
+    storage: DependencyStatus;
   };
 }
 
@@ -33,6 +34,17 @@ export const QUEUE_NAMES = {
   ingestion: 'ingestion',
 } as const;
 export type QueueName = (typeof QUEUE_NAMES)[keyof typeof QUEUE_NAMES];
+
+/** Ingestion job names (spec §17). Producers: API. Consumer: worker (Phase 6). */
+export const INGESTION_JOBS = {
+  processDocument: 'PROCESS_DOCUMENT',
+} as const;
+
+export interface ProcessDocumentJob {
+  organizationId: string;
+  documentId: string;
+  versionId: string;
+}
 
 /**
  * Returned by register/login to the Next.js BFF only (server-to-server). The BFF moves the
@@ -185,4 +197,71 @@ export interface DepartmentListResponse {
 
 export interface TeamListResponse {
   teams: TeamDetails[];
+}
+
+// ── Documents (Phase 5) ──────────────────────────────────────────────────────────────────
+
+export type DocumentVisibilityValue = 'PRIVATE' | 'CUSTOM' | 'ROLE' | 'TEAM' | 'DEPARTMENT' | 'ORGANIZATION';
+export type DocumentStatusValue = 'UPLOADING' | 'PROCESSING' | 'INDEXING' | 'READY' | 'FAILED' | 'ARCHIVED';
+export type DocumentActionValue = 'READ' | 'WRITE' | 'DELETE' | 'SHARE';
+export type AclSubjectTypeValue = 'USER' | 'ROLE' | 'TEAM' | 'DEPARTMENT';
+
+/** What the CALLER may do with a document, as decided by the authorization engine. */
+export interface DocumentCapabilities {
+  write: boolean;
+  delete: boolean;
+  share: boolean;
+}
+
+export interface DocumentSummary {
+  id: string;
+  title: string;
+  description: string | null;
+  owner: MemberRef;
+  visibility: DocumentVisibilityValue;
+  status: DocumentStatusValue;
+  mimeType: string;
+  size: number;
+  version: number;
+  updatedAt: string;
+  capabilities: DocumentCapabilities;
+}
+
+export interface DocumentListResponse {
+  documents: DocumentSummary[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface DocumentVersionSummary {
+  id: string;
+  version: number;
+  originalFilename: string;
+  mimeType: string;
+  size: number;
+  contentHash: string;
+  createdBy: MemberRef;
+  createdAt: string;
+}
+
+/** A named target (role, team or department) for audiences and ACL subjects. */
+export interface SubjectRef {
+  type: AclSubjectTypeValue;
+  id: string;
+  name: string;
+}
+
+export interface AclEntryView {
+  subject: SubjectRef;
+  permission: DocumentActionValue;
+  effect: 'ALLOW' | 'DENY';
+}
+
+export interface DocumentDetails extends DocumentSummary {
+  createdAt: string;
+  versions: DocumentVersionSummary[];
+  audience: SubjectRef[];
+  /** Only present when the caller may SHARE (manage access to) the document. */
+  acl: AclEntryView[] | null;
 }

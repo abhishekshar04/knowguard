@@ -6,7 +6,7 @@ Permission-aware enterprise knowledge platform. The core invariant:
 
 Authorization happens **before** retrieval and context construction — never by asking an LLM to withhold information.
 
-**Status: Phase 4 (authorization).** A pure authorization engine (tenant, account state, role capability, explicit deny, ownership and explicit allow, inherited visibility, then default deny), backed by property-based tests. Custom roles, with an editor and a permissions matrix, are guarded against privilege escalation. Also in place: member administration, invite links, departments and teams, sessions, the BFF, rate limiting and CI. Next: documents (Phase 5).
+**Status: Phase 5 (documents).** Upload PDF, DOCX, Markdown and text files to S3-compatible storage (type checked from the bytes, SHA-256 fingerprinted, immutable versions). Documents have per-document visibility and allow/deny sharing, and every read, edit, share and download goes through the authorization engine. Listing uses a SQL filter proven equivalent to the engine by randomized tests. Uploads queue ingestion jobs for Phase 6 (text extraction and embeddings).
 
 ## How authentication works
 
@@ -50,7 +50,7 @@ docker/       Postgres init scripts
 ```bash
 cp .env.example .env          # local-only placeholder values
 pnpm install
-pnpm infra:up                 # PostgreSQL (pgvector) + Redis, waits until healthy
+pnpm infra:up                 # PostgreSQL (pgvector), Redis, SeaweedFS (S3); waits until healthy
 pnpm build                    # builds shared packages + generates Prisma client
 pnpm db:deploy                # apply migrations (use db:migrate when changing the schema)
 pnpm db:seed                  # Acme org, owner/admin/employee, roles, permissions
@@ -79,23 +79,27 @@ Then open http://localhost:3000. You can create a new organization at `/register
 
 All configuration lives in the repo-root `.env` (template: [.env.example](.env.example)). Apps validate their environment at startup with zod and refuse to boot on invalid config; error messages name the variable but never echo its value.
 
-| Variable                                                             | Used by                | Purpose                                                        |
-| -------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------- |
-| `NODE_ENV`                                                           | all                    | `development` \| `test` \| `production`                        |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` | docker compose         | Postgres container                                             |
-| `DATABASE_URL`                                                       | api, database          | Postgres connection string                                     |
-| `TEST_DATABASE_URL`                                                  | tests                  | Separate test database (name must contain `test`)              |
-| `REDIS_PORT`, `REDIS_PASSWORD`                                       | docker compose         | Redis container (password required)                            |
-| `REDIS_URL`                                                          | api, worker            | Redis connection string                                        |
-| `API_PORT`                                                           | api                    | HTTP port (default 4000)                                       |
-| `SESSION_TTL_HOURS`                                                  | api                    | Absolute session lifetime (default 168)                        |
-| `SESSION_IDLE_TIMEOUT_MINUTES`                                       | api                    | Idle session expiry (default 1440)                             |
-| `TRUST_PROXY`                                                        | api                    | Hops trusted to set X-Forwarded-For (see ADR 0005)             |
-| `LOG_LEVEL`                                                          | api, worker            | pino level                                                     |
-| `WORKER_CONCURRENCY`                                                 | worker                 | Parallel jobs (default 4)                                      |
-| `API_URL`                                                            | web (server-side only) | Base URL of the API                                            |
-| `SESSION_COOKIE_SECURE`                                              | web                    | Force the Secure cookie flag on/off (default: production only) |
-| `SEED_USER_PASSWORD`                                                 | seed                   | Password for seeded demo users (≥ 12 chars)                    |
+| Variable                                                             | Used by                | Purpose                                                                 |
+| -------------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------- |
+| `NODE_ENV`                                                           | all                    | `development` \| `test` \| `production`                                 |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT` | docker compose         | Postgres container                                                      |
+| `DATABASE_URL`                                                       | api, database          | Postgres connection string                                              |
+| `TEST_DATABASE_URL`                                                  | tests                  | Separate test database (name must contain `test`)                       |
+| `REDIS_PORT`, `REDIS_PASSWORD`                                       | docker compose         | Redis container (password required)                                     |
+| `REDIS_URL`                                                          | api, worker            | Redis connection string                                                 |
+| `API_PORT`                                                           | api                    | HTTP port (default 4000)                                                |
+| `SESSION_TTL_HOURS`                                                  | api                    | Absolute session lifetime (default 168)                                 |
+| `SESSION_IDLE_TIMEOUT_MINUTES`                                       | api                    | Idle session expiry (default 1440)                                      |
+| `TRUST_PROXY`                                                        | api                    | Hops trusted to set X-Forwarded-For (see ADR 0005)                      |
+| `LOG_LEVEL`                                                          | api, worker            | pino level                                                              |
+| `WORKER_CONCURRENCY`                                                 | worker                 | Parallel jobs (default 4)                                               |
+| `API_URL`                                                            | web (server-side only) | Base URL of the API                                                     |
+| `SESSION_COOKIE_SECURE`                                              | web                    | Force the Secure cookie flag on/off (default: production only)          |
+| `STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_BUCKET`               | api                    | S3-compatible object storage (omit the endpoint for AWS S3)             |
+| `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`                 | api, docker compose    | Storage credentials                                                     |
+| `STORAGE_FORCE_PATH_STYLE`, `STORAGE_AUTO_CREATE_BUCKET`             | api                    | Path-style URLs (SeaweedFS/MinIO); create the bucket on boot (dev only) |
+| `MAX_UPLOAD_MB`                                                      | api                    | Upload size limit (default 25)                                          |
+| `SEED_USER_PASSWORD`                                                 | seed                   | Password for seeded demo users (≥ 12 chars)                             |
 
 ## Architecture decisions
 
@@ -108,6 +112,7 @@ See [docs/adr](docs/adr):
 5. [Identity, membership, sessions and the BFF](docs/adr/0005-identity-membership-and-sessions.md)
 6. [Minimal RBAC, invitations and organization structure](docs/adr/0006-rbac-invitations-and-organization-structure.md)
 7. [Authorization engine and custom roles](docs/adr/0007-authorization-engine.md)
+8. [Documents, storage and query-level access control](docs/adr/0008-documents-storage-and-access.md)
 
 ## Deploying: required
 

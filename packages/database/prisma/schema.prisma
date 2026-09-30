@@ -46,6 +46,7 @@ model Organization {
   departments Department[]
   teams       Team[]
   roles       Role[]
+  documents   Document[]
 
   @@map("organizations")
 }
@@ -87,6 +88,8 @@ model UserOrganization {
   teamMemberships       TeamMembership[]
   sessions              Session[]
   invitations           Invitation[]
+  ownedDocuments        Document[]
+  documentVersions      DocumentVersion[]
 
   @@id([userId, organizationId])
   /// MVP: one organization per user. Drop this index to allow multi-organization users.
@@ -272,4 +275,135 @@ model UserRole {
   @@index([roleId])
   @@index([organizationId])
   @@map("user_roles")
+}
+
+// ── Documents (Phase 5) ─────────────────────────────────────────────────────────────────
+// Authorization semantics live in @knowguard/authorization (ADR 0007). These tables store the
+// resource shape the engine evaluates: owner, visibility + audience, and ACL entries.
+
+enum DocumentVisibility {
+  PRIVATE
+  CUSTOM
+  ROLE
+  TEAM
+  DEPARTMENT
+  ORGANIZATION
+}
+
+/// Ingestion lifecycle of the ACTIVE version.
+enum DocumentStatus {
+  UPLOADING
+  PROCESSING
+  INDEXING
+  READY
+  FAILED
+  ARCHIVED
+}
+
+enum AclSubjectType {
+  USER
+  ROLE
+  TEAM
+  DEPARTMENT
+}
+
+enum DocumentAction {
+  READ
+  WRITE
+  DELETE
+  SHARE
+}
+
+enum AclEffect {
+  ALLOW
+  DENY
+}
+
+model Document {
+  id               String             @id @default(uuid(7)) @db.Uuid
+  organizationId   String             @map("organization_id") @db.Uuid
+  title            String             @db.VarChar(300)
+  description      String?            @db.Text
+  ownerId          String             @map("owner_id") @db.Uuid
+  visibility       DocumentVisibility @default(PRIVATE)
+  status           DocumentStatus     @default(UPLOADING)
+  /// Denormalized from the active version for listing without joins.
+  currentVersionId String?            @map("current_version_id") @db.Uuid
+  currentVersion   Int                @default(0) @map("current_version")
+  mimeType         String             @map("mime_type") @db.VarChar(127)
+  size             Int
+  storageKey       String             @map("storage_key") @db.VarChar(512)
+  createdAt        DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// Composite FK: the owner must be a member of the document's organization.
+  owner        UserOrganization     @relation(fields: [ownerId, organizationId], references: [userId, organizationId], onDelete: Restrict)
+  versions     DocumentVersion[]
+  permissions  DocumentPermission[]
+  audience     DocumentAudience[]
+
+  @@unique([id, organizationId])
+  @@index([organizationId, visibility])
+  @@index([organizationId, ownerId])
+  @@index([organizationId, updatedAt])
+  @@map("documents")
+}
+
+/// Immutable: a new upload creates a new row; rows are never updated.
+model DocumentVersion {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  documentId       String   @map("document_id") @db.Uuid
+  version          Int
+  storageKey       String   @map("storage_key") @db.VarChar(512)
+  /// SHA-256 (hex) of the stored bytes.
+  contentHash      String   @map("content_hash") @db.Char(64)
+  mimeType         String   @map("mime_type") @db.VarChar(127)
+  size             Int
+  originalFilename String   @map("original_filename") @db.VarChar(255)
+  createdById      String   @map("created_by_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  document  Document         @relation(fields: [documentId, organizationId], references: [id, organizationId], onDelete: Cascade)
+  createdBy UserOrganization @relation(fields: [createdById, organizationId], references: [userId, organizationId], onDelete: Restrict)
+
+  @@unique([documentId, version])
+  @@unique([id, organizationId])
+  @@index([organizationId])
+  @@map("document_versions")
+}
+
+/// Audience for ROLE / TEAM / DEPARTMENT visibility: IDs of roles, teams or departments
+/// (which kind is implied by documents.visibility). Validated by the application.
+model DocumentAudience {
+  documentId     String @map("document_id") @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  targetId       String @map("target_id") @db.Uuid
+
+  document Document @relation(fields: [documentId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@id([documentId, targetId])
+  @@index([organizationId, targetId])
+  @@map("document_audiences")
+}
+
+/// Access-control entry (spec §13) with an explicit effect so DENY entries can be stored.
+/// subject_id references a user, role, team or department per subject_type (validated by
+/// the application; entries are removed when their subject is deleted).
+model DocumentPermission {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  organizationId String         @map("organization_id") @db.Uuid
+  documentId     String         @map("document_id") @db.Uuid
+  subjectType    AclSubjectType @map("subject_type")
+  subjectId      String         @map("subject_id") @db.Uuid
+  permission     DocumentAction
+  effect         AclEffect      @default(ALLOW)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  document Document @relation(fields: [documentId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@unique([documentId, subjectType, subjectId, permission])
+  @@index([organizationId, subjectType, subjectId])
+  @@map("document_permissions")
 }

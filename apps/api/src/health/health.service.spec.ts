@@ -1,11 +1,18 @@
 import type { PrismaService } from '../common/prisma.service';
+import type { ObjectStorage } from '@knowguard/storage';
+
 import type { RedisService } from '../common/redis.service';
 import { HealthService } from './health.service';
 
-function makeService(opts: { db: () => Promise<unknown>; ping: () => Promise<string> }): HealthService {
+function makeService(opts: {
+  db: () => Promise<unknown>;
+  ping: () => Promise<string>;
+  storage?: () => Promise<void>;
+}): HealthService {
   const prisma = { $queryRaw: jest.fn(opts.db) } as unknown as PrismaService;
   const redis = { client: { ping: jest.fn(opts.ping) } } as unknown as RedisService;
-  return new HealthService(prisma, redis);
+  const storage = { ping: jest.fn(opts.storage ?? (async () => undefined)) } as unknown as ObjectStorage;
+  return new HealthService(prisma, redis, storage);
 }
 
 describe('HealthService', () => {
@@ -13,8 +20,19 @@ describe('HealthService', () => {
     const service = makeService({ db: async () => [{ '?column?': 1 }], ping: async () => 'PONG' });
     await expect(service.check()).resolves.toMatchObject({
       status: 'ok',
-      checks: { database: 'up', redis: 'up' },
+      checks: { database: 'up', redis: 'up', storage: 'up' },
     });
+  });
+
+  it('reports degraded when object storage is down', async () => {
+    const service = makeService({
+      db: async () => [],
+      ping: async () => 'PONG',
+      storage: async () => {
+        throw new Error('connect ECONNREFUSED');
+      },
+    });
+    await expect(service.check()).resolves.toMatchObject({ status: 'degraded', checks: { storage: 'down' } });
   });
 
   it('reports degraded when the database is down', async () => {

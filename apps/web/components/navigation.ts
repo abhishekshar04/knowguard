@@ -29,7 +29,7 @@ export const MAIN_NAV: NavItem[] = [
   { label: 'Home', href: '/dashboard', icon: Home },
   { label: 'Search', href: '/search', icon: Search, comingIn: 7 },
   { label: 'Ask AI', href: '/ask', icon: Bot, comingIn: 8 },
-  { label: 'Documents', href: '/documents', icon: FileText, comingIn: 5 },
+  { label: 'Documents', href: '/documents', icon: FileText },
   { label: 'Teams', href: '/teams', icon: UsersRound },
   { label: 'Settings', href: '/settings', icon: Settings },
 ];

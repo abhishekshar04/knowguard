@@ -2,6 +2,7 @@ import { type DynamicModule, Module } from '@nestjs/common';
 
 import { AuthModule } from './auth/auth.module';
 import { InfrastructureModule } from './common/infrastructure.module';
+import { DocumentsModule } from './documents/documents.module';
 import { API_ENV, type ApiEnv } from './config/api-env';
 import { HealthModule } from './health/health.module';
 import { InvitationsModule } from './invitations/invitations.module';
@@ -31,6 +32,7 @@ export class AppModule {
         InvitationsModule,
         RolesModule,
         StructureModule,
+        DocumentsModule,
         HealthModule,
       ],
     };

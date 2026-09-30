@@ -21,20 +21,29 @@ async function main(): Promise<void> {
   // Handlers are registered here as phases land (ingestion in Phase 6).
   const registry = new JobRegistry();
 
-  const worker = new Worker(QUEUE_NAMES.ingestion, (job) => registry.dispatch(job, logger), {
-    connection,
-    concurrency: env.WORKER_CONCURRENCY,
-  });
-  worker.on('ready', () =>
-    logger.info({ queue: QUEUE_NAMES.ingestion, handlers: registry.size }, 'Worker ready'),
-  );
-  worker.on('failed', (job, error) =>
-    logger.error({ jobId: job?.id, jobName: job?.name, err: error.message }, 'Job failed'),
-  );
+  // Without handlers, consuming would pull every queued job and fail it. Leave jobs waiting in
+  // Redis instead; they are processed once handlers are registered (and survive restarts).
+  const worker =
+    registry.size === 0
+      ? null
+      : new Worker(QUEUE_NAMES.ingestion, (job) => registry.dispatch(job, logger), {
+          connection,
+          concurrency: env.WORKER_CONCURRENCY,
+        });
+  if (!worker) {
+    logger.info({ queue: QUEUE_NAMES.ingestion }, 'No job handlers registered yet; not consuming the queue');
+  } else {
+    worker.on('ready', () =>
+      logger.info({ queue: QUEUE_NAMES.ingestion, handlers: registry.size }, 'Worker ready'),
+    );
+    worker.on('failed', (job, error) =>
+      logger.error({ jobId: job?.id, jobName: job?.name, err: error.message }, 'Job failed'),
+    );
+  }
 
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'Shutting down worker');
-    await worker.close(); // waits for in-flight jobs to finish
+    await worker?.close(); // waits for in-flight jobs to finish
     await connection.quit();
     process.exit(0);
   };

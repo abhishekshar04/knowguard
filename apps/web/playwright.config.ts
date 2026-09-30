@@ -39,6 +39,8 @@ export default defineConfig({
         API_PORT: String(API_PORT),
         DATABASE_URL: testDatabaseUrl,
         LOG_LEVEL: 'warn',
+        STORAGE_BUCKET: `${process.env.STORAGE_BUCKET ?? 'knowguard-documents'}-test`,
+        STORAGE_AUTO_CREATE_BUCKET: 'true',
       },
     },
     {

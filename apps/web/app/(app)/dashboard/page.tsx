@@ -21,7 +21,7 @@ const ROADMAP = [
   { phase: 7, name: 'Search', detail: 'Keyword, vector, hybrid' },
   { phase: 8, name: 'AI', detail: 'Permission-aware RAG with citations' },
 ] as const;
-const CURRENT_PHASE = 2;
+const CURRENT_PHASE = 5;
 
 function StatusRow({ label, status }: { label: string; status: DependencyStatus | 'unreachable' }) {
   const up = status === 'up';
@@ -109,6 +109,7 @@ export default async function DashboardPage() {
                 <StatusRow label="API" status="up" />
                 <StatusRow label="PostgreSQL" status={result.health.checks.database} />
                 <StatusRow label="Redis" status={result.health.checks.redis} />
+                <StatusRow label="Object storage" status={result.health.checks.storage} />
                 <p className="pt-3 text-xs text-muted-foreground">
                   API v{result.health.version} · up {result.health.uptimeSeconds}s
                 </p>
