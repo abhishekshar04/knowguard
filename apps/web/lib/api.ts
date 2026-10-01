@@ -103,6 +103,33 @@ export async function apiFetchRaw(path: string, token: string): Promise<Response
   return res;
 }
 
+/**
+ * POST whose response body is a stream (Ask AI's Server-Sent Events). Errors raised before the
+ * stream starts arrive as ordinary JSON errors and are thrown as ApiError.
+ */
+export async function apiStream(
+  path: string,
+  body: unknown,
+  token: string,
+  signal: AbortSignal,
+): Promise<Response> {
+  const res = await fetch(apiUrl(path), {
+    method: 'POST',
+    cache: 'no-store',
+    // Generation can take a while; the browser's own abort is passed through too.
+    signal: AbortSignal.any([signal, AbortSignal.timeout(180_000)]),
+    headers: {
+      ...(await forwardedHeaders()),
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw toApiError(res, await res.json().catch(() => null));
+  return res;
+}
+
 function toApiError(res: Response, payload: unknown): ApiError {
   const error = (payload as ApiErrorBody | null)?.error;
   const retryAfter = Number(res.headers.get('retry-after'));

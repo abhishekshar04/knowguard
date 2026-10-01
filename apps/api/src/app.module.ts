@@ -1,5 +1,6 @@
 import { type DynamicModule, Module } from '@nestjs/common';
 
+import { AiModule } from './ai/ai.module';
 import { AuthModule } from './auth/auth.module';
 import { InfrastructureModule } from './common/infrastructure.module';
 import { DocumentsModule } from './documents/documents.module';
@@ -35,6 +36,7 @@ export class AppModule {
         StructureModule,
         DocumentsModule,
         SearchModule,
+        AiModule,
         HealthModule,
       ],
     };

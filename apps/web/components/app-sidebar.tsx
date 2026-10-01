@@ -59,6 +59,7 @@ interface AppSidebarProps {
 
 export function AppSidebar({ user, organizationName, permissions }: AppSidebarProps) {
   const pathname = usePathname();
+  const mainItems = visibleItems(MAIN_NAV, permissions);
   const adminItems = visibleItems(ADMIN_NAV, permissions);
   return (
     <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col gap-6 border-r bg-sidebar p-3 text-sidebar-foreground md:flex">
@@ -72,7 +73,7 @@ export function AppSidebar({ user, organizationName, permissions }: AppSidebarPr
         </span>
       </Link>
       <nav aria-label="Main" className="flex flex-1 flex-col gap-6 overflow-y-auto">
-        <NavSection items={MAIN_NAV} pathname={pathname} />
+        <NavSection items={mainItems} pathname={pathname} />
         {adminItems.length > 0 ? <NavSection title="Admin" items={adminItems} pathname={pathname} /> : null}
       </nav>
       <div className="flex flex-col gap-2 border-t pt-3">
@@ -95,7 +96,7 @@ export function MobileHeader({
   permissions: readonly string[];
 }) {
   const pathname = usePathname();
-  const links = [...MAIN_NAV, ...visibleItems(ADMIN_NAV, permissions)].filter(
+  const links = [...visibleItems(MAIN_NAV, permissions), ...visibleItems(ADMIN_NAV, permissions)].filter(
     (item) => item.comingIn === undefined,
   );
   return (

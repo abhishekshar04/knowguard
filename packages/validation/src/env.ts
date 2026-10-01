@@ -56,37 +56,61 @@ export const embeddingEnvShape = {
   RERANKER_MODEL: z.string().min(1).default('Xenova/bge-reranker-base'),
 };
 
-export const apiEnvSchema = z.object({
-  NODE_ENV: nodeEnv,
-  LOG_LEVEL: logLevel,
-  API_PORT: z.coerce.number().int().min(1).max(65535).default(4000),
-  DATABASE_URL: postgresUrl,
-  REDIS_URL: redisUrl,
-  /** Absolute session lifetime. */
-  SESSION_TTL_HOURS: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(24 * 90)
-    .default(168),
-  /** Sessions unused for this long expire even before the absolute lifetime. */
-  SESSION_IDLE_TIMEOUT_MINUTES: z.coerce
-    .number()
-    .int()
-    .min(5)
-    .max(60 * 24 * 30)
-    .default(60 * 24),
-  /**
-   * Which upstream hops may set X-Forwarded-For (Express "trust proxy"). The Next.js BFF
-   * is the only intended caller; "loopback" fits local development. In production set it
-   * to the BFF's address/subnet so clients cannot spoof their IP for rate limiting.
-   */
-  TRUST_PROXY: z.string().min(1).default('loopback'),
-  ...storageEnvShape,
-  ...queueEnvShape,
-  ...embeddingEnvShape,
-  MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(512).default(25),
-});
+/**
+ * Answer generation for Ask AI (ADR 0011). Only the retrieved, already-authorized passages for
+ * one question are sent to the provider. Without a provider, Ask AI reports "not configured".
+ */
+/** `KEY=` in a .env file means "not set", not "set to the empty string". */
+const optionalNonEmpty = <T extends z.ZodType>(schema: T) =>
+  z.preprocess((value) => (value === '' ? undefined : value), schema.optional());
+
+const aiEnvShape = {
+  /** Defaults to "openai" when OPENAI_API_KEY is set, otherwise "none". "fake" is for tests. */
+  AI_PROVIDER: z.enum(['openai', 'fake', 'none']).optional(),
+  OPENAI_API_KEY: optionalNonEmpty(z.string().min(1)),
+  OPENAI_MODEL: z.string().min(1).default('gpt-4o-mini'),
+  /** Azure OpenAI or any OpenAI-compatible server. */
+  OPENAI_BASE_URL: optionalNonEmpty(z.url()),
+  AI_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(64).max(4000).default(800),
+};
+
+export const apiEnvSchema = z
+  .object({
+    NODE_ENV: nodeEnv,
+    LOG_LEVEL: logLevel,
+    API_PORT: z.coerce.number().int().min(1).max(65535).default(4000),
+    DATABASE_URL: postgresUrl,
+    REDIS_URL: redisUrl,
+    /** Absolute session lifetime. */
+    SESSION_TTL_HOURS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(24 * 90)
+      .default(168),
+    /** Sessions unused for this long expire even before the absolute lifetime. */
+    SESSION_IDLE_TIMEOUT_MINUTES: z.coerce
+      .number()
+      .int()
+      .min(5)
+      .max(60 * 24 * 30)
+      .default(60 * 24),
+    /**
+     * Which upstream hops may set X-Forwarded-For (Express "trust proxy"). The Next.js BFF
+     * is the only intended caller; "loopback" fits local development. In production set it
+     * to the BFF's address/subnet so clients cannot spoof their IP for rate limiting.
+     */
+    TRUST_PROXY: z.string().min(1).default('loopback'),
+    ...storageEnvShape,
+    ...queueEnvShape,
+    ...embeddingEnvShape,
+    ...aiEnvShape,
+    MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(512).default(25),
+  })
+  .refine((env) => env.AI_PROVIDER !== 'openai' || env.OPENAI_API_KEY !== undefined, {
+    message: 'OPENAI_API_KEY is required when AI_PROVIDER=openai',
+    path: ['OPENAI_API_KEY'],
+  });
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
 
 export const workerEnvSchema = z.object({

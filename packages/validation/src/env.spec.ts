@@ -43,6 +43,20 @@ describe('parseEnv', () => {
   });
 });
 
+describe('AI settings', () => {
+  it('treats an empty OPENAI_API_KEY as unset', () => {
+    const env = parseEnv(apiEnvSchema, { ...validApiEnv, OPENAI_API_KEY: '' });
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(env.AI_PROVIDER).toBeUndefined();
+  });
+
+  it('requires a key when the OpenAI provider is selected', () => {
+    expect(() => parseEnv(apiEnvSchema, { ...validApiEnv, AI_PROVIDER: 'openai' })).toThrow(/OPENAI_API_KEY/);
+    const env = parseEnv(apiEnvSchema, { ...validApiEnv, AI_PROVIDER: 'openai', OPENAI_API_KEY: 'sk-test' });
+    expect(env.OPENAI_MODEL).toBeTruthy();
+  });
+});
+
 describe('primitives', () => {
   it('normalises email case and whitespace', () => {
     expect(emailSchema.parse('  Alice@Example.COM ')).toBe('alice@example.com');

@@ -1,17 +1,13 @@
 /**
  * Permission-aware hybrid search against real PostgreSQL + pgvector with the real local models.
- * Documents are uploaded through the API (real ownership/visibility/ACLs) and then indexed the
- * way the worker does it: chunks + embeddings from the same model.
+ * Documents are uploaded through the API and indexed the way the worker does it (./indexing).
  */
 import { randomUUID } from 'node:crypto';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
-
-import { LocalEmbeddingProvider, toVectorLiteral } from '@knowguard/ai';
 import type { DocumentDetails, SearchResponse } from '@knowguard/types';
 import type { INestApplication } from '@nestjs/common';
 
 import type { PrismaService } from '../src/common/prisma.service';
+import { createIndexer } from './indexing';
 import { createTestApp } from './test-app';
 import { TestClient, type TestMember, type TestOwner } from './test-client';
 
@@ -22,43 +18,7 @@ let owner: TestOwner;
 let employee: TestMember;
 let outsider: TestOwner;
 
-const embeddings = new LocalEmbeddingProvider({
-  cacheDir: process.env.EMBEDDING_CACHE_DIR ?? join(homedir(), '.cache', 'knowguard', 'models'),
-  allowRemoteModels: true,
-});
-
-/** Uploads a document, then indexes the given passages (one chunk each) as the worker would. */
-async function indexedDocument(
-  token: string,
-  title: string,
-  passages: Array<{ text: string; page?: number; section?: string }>,
-  options: { visibility?: string; status?: 'READY' | 'PROCESSING' } = {},
-): Promise<DocumentDetails> {
-  const doc = (
-    await api
-      .as(token)
-      .multipart('/documents')
-      .field('title', title)
-      .field('visibility', options.visibility ?? 'ORGANIZATION')
-      .attach('file', Buffer.from(passages.map((p) => p.text).join('\n\n')), `${randomUUID()}.md`)
-      .expect(201)
-  ).body as DocumentDetails;
-  const vectors = await embeddings.embedDocuments(
-    passages.map((p) => `${title}\n${p.section ?? ''}\n\n${p.text}`),
-  );
-  const organizationId = (await prisma.document.findUniqueOrThrow({ where: { id: doc.id } })).organizationId;
-  for (const [index, passage] of passages.entries()) {
-    const metadata = { pageNumber: passage.page ?? null, section: passage.section ?? null, headingPath: [] };
-    await prisma.$executeRaw`
-      INSERT INTO document_chunks (id, organization_id, document_id, version_id, chunk_index, content,
-        token_count, metadata, embedding, embedding_model)
-      VALUES (${randomUUID()}::uuid, ${organizationId}::uuid, ${doc.id}::uuid, ${doc.versions[0]!.id}::uuid,
-        ${index}, ${passage.text}, ${Math.ceil(passage.text.length / 4)}, ${JSON.stringify(metadata)}::jsonb,
-        ${toVectorLiteral(vectors[index]!)}::vector, ${embeddings.model})`;
-  }
-  await prisma.document.update({ where: { id: doc.id }, data: { status: options.status ?? 'READY' } });
-  return doc;
-}
+let indexedDocument: ReturnType<typeof createIndexer>;
 
 const search = (token: string, query: string, limit?: number) =>
   api.as(token).post('/search', { query, ...(limit ? { limit } : {}) });
@@ -73,6 +33,7 @@ let rollback: DocumentDetails;
 beforeAll(async () => {
   ({ app, prisma } = await createTestApp({ RERANKER_MODEL: 'Xenova/bge-reranker-base' }));
   api = new TestClient(app, prisma);
+  indexedDocument = createIndexer(api, prisma);
   owner = await api.registerOwner('Search Org');
   employee = await api.addMember(owner.token, 'EMPLOYEE');
   outsider = await api.registerOwner('Search Outsider');

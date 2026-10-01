@@ -28,7 +28,7 @@ export interface NavItem {
 export const MAIN_NAV: NavItem[] = [
   { label: 'Home', href: '/dashboard', icon: Home },
   { label: 'Search', href: '/search', icon: Search },
-  { label: 'Ask AI', href: '/ask', icon: Bot, comingIn: 8 },
+  { label: 'Ask AI', href: '/ask', icon: Bot, requires: 'ai.query' },
   { label: 'Documents', href: '/documents', icon: FileText },
   { label: 'Teams', href: '/teams', icon: UsersRound },
   { label: 'Settings', href: '/settings', icon: Settings },

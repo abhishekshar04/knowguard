@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { ApiError, apiFetchRaw, apiRequest } from '@/lib/api';
+import { can } from '@/lib/permissions';
 import { getSessionToken, requireUser } from '@/lib/session';
 import { loadSubjectOptions, type SubjectOptions } from '@/lib/subjects';
 
@@ -105,10 +106,14 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
                 </a>
               </Button>
             ) : null}
-            <Button size="sm" disabled title="Ask AI arrives in Phase 8">
-              <Bot aria-hidden />
-              Ask AI about this document
-            </Button>
+            {can(me, 'ai.query') && doc.status === 'READY' ? (
+              <Button asChild size="sm">
+                <Link href={`/ask?document=${doc.id}`} data-testid="ask-about-document">
+                  <Bot aria-hidden />
+                  Ask AI about this document
+                </Link>
+              </Button>
+            ) : null}
           </div>
         }
       />

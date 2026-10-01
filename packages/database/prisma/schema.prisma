@@ -47,6 +47,7 @@ model Organization {
   teams       Team[]
   roles       Role[]
   documents   Document[]
+  conversations Conversation[]
 
   @@map("organizations")
 }
@@ -90,6 +91,7 @@ model UserOrganization {
   invitations           Invitation[]
   ownedDocuments        Document[]
   documentVersions      DocumentVersion[]
+  conversations         Conversation[]
 
   @@id([userId, organizationId])
   /// MVP: one organization per user. Drop this index to allow multi-organization users.
@@ -437,4 +439,56 @@ model DocumentChunk {
   @@unique([versionId, chunkIndex])
   @@index([organizationId, documentId])
   @@map("document_chunks")
+}
+
+// ── AI conversations (Phase 8) ──────────────────────────────────────────────────────────
+
+enum MessageRole {
+  USER
+  ASSISTANT
+}
+
+enum MessageStatus {
+  COMPLETE
+  FAILED
+}
+
+/// A user's private AI conversation. Never visible to other users (spec §27).
+model Conversation {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  title          String   @db.VarChar(200)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization          @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  /// Composite FK: a conversation belongs to a membership of its organization.
+  membership   UserOrganization      @relation(fields: [userId, organizationId], references: [userId, organizationId], onDelete: Cascade)
+  messages     ConversationMessage[]
+
+  @@unique([id, organizationId])
+  @@index([organizationId, userId, updatedAt])
+  @@map("conversations")
+}
+
+model ConversationMessage {
+  id             String        @id @default(uuid(7)) @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  conversationId String        @map("conversation_id") @db.Uuid
+  role           MessageRole
+  status         MessageStatus @default(COMPLETE)
+  content        String        @db.Text
+  /// Assistant messages: the cited sources (documentId, title, version, page, chunkId, …).
+  sources        Json          @default("[]")
+  /// Assistant messages: model id and token usage, for cost tracking.
+  model          String?       @db.VarChar(100)
+  promptTokens   Int?          @map("prompt_tokens")
+  outputTokens   Int?          @map("output_tokens")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  conversation Conversation @relation(fields: [conversationId, organizationId], references: [id, organizationId], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("conversation_messages")
 }

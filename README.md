@@ -6,7 +6,9 @@ Permission-aware enterprise knowledge platform. The core invariant:
 
 Authorization happens **before** retrieval and context construction — never by asking an LLM to withhold information.
 
-**Status: Phase 7 (search).** Permission-aware hybrid search. Only documents you are allowed to read are searched: the permission filter runs before retrieval, and every result is re-checked by the authorization engine. Keyword search (Postgres full-text, including exact IDs and error codes) and meaning-based search (pgvector) are merged and then reranked by a local cross-encoder; everything runs on your own servers. Results cite the document, version, section and page. It builds on Phases 1–6: tenant isolation, the authorization engine, documents, and local ingestion and embeddings. Next: Ask AI with citations (Phase 8).
+**Status: Phase 8 (Ask AI).** Ask questions in plain language and get streamed answers with clickable citations to the exact document, version, section and page. Answers are built only from passages you are allowed to read: the context comes from the same permission-filtered retrieval as search, so the model never sees anything else. Conversations are private to you, and an answer is hidden again if you lose access to its sources. Answer generation uses OpenAI, Google Gemini or any OpenAI-compatible server through a provider-neutral interface. Embeddings, search and reranking stay on your own servers. It builds on Phases 1–7: tenant isolation, the authorization engine, documents, local ingestion and hybrid search. Next: audit logs and the admin dashboard (Phase 9).
+
+To enable Ask AI, set `OPENAI_API_KEY` in your local `.env` (never in git). For Google Gemini, also set `OPENAI_BASE_URL` and `OPENAI_MODEL` as shown in [.env.example](.env.example). Without it, everything else works and Ask AI reports that it is not configured.
 
 ## How authentication works
 
@@ -34,7 +36,7 @@ packages/
   logger/     pino with secret redaction
   types/      Shared API contract types (browser-safe)
   storage/    Object storage interface (Phase 5)
-  ai/         AI provider interfaces (Phase 6/8)
+  ai/         Local embeddings + reranker, chat provider interface and OpenAI adapter
 docs/adr/     Architecture decision records
 docker/       Postgres init scripts
 .github/      CI workflow (lint, typecheck, unit, integration, e2e, browser tests)
@@ -80,30 +82,32 @@ Then open http://localhost:3000. You can create a new organization at `/register
 
 All configuration lives in the repo-root `.env` (template: [.env.example](.env.example)). Apps validate their environment at startup with zod and refuse to boot on invalid config; error messages name the variable but never echo its value.
 
-| Variable                                                                  | Used by                | Purpose                                                                                                  |
-| ------------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------- |
-| `NODE_ENV`                                                                | all                    | `development` \| `test` \| `production`                                                                  |
-| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT`      | docker compose         | Postgres container                                                                                       |
-| `DATABASE_URL`                                                            | api, database          | Postgres connection string                                                                               |
-| `TEST_DATABASE_URL`                                                       | tests                  | Separate test database (name must contain `test`)                                                        |
-| `REDIS_PORT`, `REDIS_PASSWORD`                                            | docker compose         | Redis container (password required)                                                                      |
-| `REDIS_URL`                                                               | api, worker            | Redis connection string                                                                                  |
-| `API_PORT`                                                                | api                    | HTTP port (default 4000)                                                                                 |
-| `SESSION_TTL_HOURS`                                                       | api                    | Absolute session lifetime (default 168)                                                                  |
-| `SESSION_IDLE_TIMEOUT_MINUTES`                                            | api                    | Idle session expiry (default 1440)                                                                       |
-| `TRUST_PROXY`                                                             | api                    | Hops trusted to set X-Forwarded-For (see ADR 0005)                                                       |
-| `LOG_LEVEL`                                                               | api, worker            | pino level                                                                                               |
-| `API_URL`                                                                 | web (server-side only) | Base URL of the API                                                                                      |
-| `SESSION_COOKIE_SECURE`                                                   | web                    | Force the Secure cookie flag on/off (default: production only)                                           |
-| `STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_BUCKET`                    | api                    | S3-compatible object storage (omit the endpoint for AWS S3)                                              |
-| `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`                      | api, docker compose    | Storage credentials                                                                                      |
-| `STORAGE_FORCE_PATH_STYLE`, `STORAGE_AUTO_CREATE_BUCKET`                  | api                    | Path-style URLs (SeaweedFS/MinIO); create the bucket on boot (dev only)                                  |
-| `MAX_UPLOAD_MB`                                                           | api                    | Upload size limit (default 25)                                                                           |
-| `EMBEDDING_MODEL`, `EMBEDDING_CACHE_DIR`, `EMBEDDING_ALLOW_REMOTE_MODELS` | worker                 | Local embedding model, its cache (default `~/.cache/knowguard/models`), and whether it may be downloaded |
-| `RERANKER_MODEL`                                                          | api                    | Local cross-encoder for search reranking (default bge-reranker-base; `none` disables)                    |
-| `WORKER_CONCURRENCY`                                                      | worker                 | Parallel ingestion jobs (default 2)                                                                      |
-| `QUEUE_PREFIX`                                                            | api, worker            | BullMQ key prefix; environments sharing a Redis must differ                                              |
-| `SEED_USER_PASSWORD`                                                      | seed                   | Password for seeded demo users (≥ 12 chars)                                                              |
+| Variable                                                                  | Used by                | Purpose                                                                                                          |
+| ------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                                                                | all                    | `development` \| `test` \| `production`                                                                          |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT`      | docker compose         | Postgres container                                                                                               |
+| `DATABASE_URL`                                                            | api, database          | Postgres connection string                                                                                       |
+| `TEST_DATABASE_URL`                                                       | tests                  | Separate test database (name must contain `test`)                                                                |
+| `REDIS_PORT`, `REDIS_PASSWORD`                                            | docker compose         | Redis container (password required)                                                                              |
+| `REDIS_URL`                                                               | api, worker            | Redis connection string                                                                                          |
+| `API_PORT`                                                                | api                    | HTTP port (default 4000)                                                                                         |
+| `SESSION_TTL_HOURS`                                                       | api                    | Absolute session lifetime (default 168)                                                                          |
+| `SESSION_IDLE_TIMEOUT_MINUTES`                                            | api                    | Idle session expiry (default 1440)                                                                               |
+| `TRUST_PROXY`                                                             | api                    | Hops trusted to set X-Forwarded-For (see ADR 0005)                                                               |
+| `LOG_LEVEL`                                                               | api, worker            | pino level                                                                                                       |
+| `API_URL`                                                                 | web (server-side only) | Base URL of the API                                                                                              |
+| `SESSION_COOKIE_SECURE`                                                   | web                    | Force the Secure cookie flag on/off (default: production only)                                                   |
+| `STORAGE_ENDPOINT`, `STORAGE_REGION`, `STORAGE_BUCKET`                    | api                    | S3-compatible object storage (omit the endpoint for AWS S3)                                                      |
+| `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`                      | api, docker compose    | Storage credentials                                                                                              |
+| `STORAGE_FORCE_PATH_STYLE`, `STORAGE_AUTO_CREATE_BUCKET`                  | api                    | Path-style URLs (SeaweedFS/MinIO); create the bucket on boot (dev only)                                          |
+| `MAX_UPLOAD_MB`                                                           | api                    | Upload size limit (default 25)                                                                                   |
+| `EMBEDDING_MODEL`, `EMBEDDING_CACHE_DIR`, `EMBEDDING_ALLOW_REMOTE_MODELS` | worker                 | Local embedding model, its cache (default `~/.cache/knowguard/models`), and whether it may be downloaded         |
+| `RERANKER_MODEL`                                                          | api                    | Local cross-encoder for search reranking (default bge-reranker-base; `none` disables)                            |
+| `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`                       | api                    | Ask AI answer generation (key from a secret store; model default gpt-4o-mini; base URL for compatible servers)   |
+| `AI_PROVIDER`, `AI_MAX_OUTPUT_TOKENS`                                     | api                    | `openai` \| `none` \| `fake` (tests; default: openai if a key is set) and the per-answer token cap (default 800) |
+| `WORKER_CONCURRENCY`                                                      | worker                 | Parallel ingestion jobs (default 2)                                                                              |
+| `QUEUE_PREFIX`                                                            | api, worker            | BullMQ key prefix; environments sharing a Redis must differ                                                      |
+| `SEED_USER_PASSWORD`                                                      | seed                   | Password for seeded demo users (≥ 12 chars)                                                                      |
 
 ## Architecture decisions
 
@@ -119,6 +123,7 @@ See [docs/adr](docs/adr):
 8. [Documents, storage and query-level access control](docs/adr/0008-documents-storage-and-access.md)
 9. [Ingestion pipeline and local embeddings](docs/adr/0009-ingestion-and-embeddings.md)
 10. [Permission-aware hybrid search](docs/adr/0010-permission-aware-hybrid-search.md)
+11. [Ask AI: grounded answers from authorized passages](docs/adr/0011-ask-ai.md)
 
 ## Deploying: required
 

@@ -1,45 +1,10 @@
-import { type Browser, expect, type Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
-import { isolateClientIp, PASSWORD, registerViaUi, uniqueEmail } from './helpers';
+import { inviteEmployee, isolateClientIp, registerViaUi, uploadViaUi } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await isolateClientIp(page);
 });
-
-async function inviteEmployee(page: Page, browser: Browser, name: string) {
-  const email = uniqueEmail('reader');
-  await page.goto('/admin/users');
-  await page.getByLabel('Name', { exact: true }).fill(name);
-  await page.getByLabel('Email', { exact: true }).fill(email);
-  await page.getByRole('button', { name: 'Create invitation' }).click();
-  const inviteUrl = await page.getByTestId('invite-url').inputValue();
-
-  const context = await browser.newContext();
-  const memberPage = await context.newPage();
-  await isolateClientIp(memberPage);
-  await memberPage.goto(inviteUrl);
-  await memberPage.getByLabel('Choose a password').fill(PASSWORD);
-  await memberPage.getByRole('button', { name: 'Join organization' }).click();
-  await expect(memberPage).toHaveURL(/\/dashboard$/);
-  return { context, page: memberPage, email, name };
-}
-
-async function uploadViaUi(
-  page: Page,
-  input: { title: string; content: string; filename: string; visibility: string },
-): Promise<string> {
-  await page.goto('/documents');
-  await page.setInputFiles('#upload-file', {
-    name: input.filename,
-    mimeType: 'text/markdown',
-    buffer: Buffer.from(input.content),
-  });
-  await page.getByLabel('Title').fill(input.title);
-  await page.getByLabel('Who can read it').selectOption({ label: input.visibility });
-  await page.getByRole('button', { name: 'Upload' }).click();
-  await expect(page).toHaveURL(/\/documents\/[0-9a-f-]{36}$/);
-  return page.url();
-}
 
 test('upload, preview, download, and organization-wide reading', async ({ page, browser }) => {
   await registerViaUi(page, { organizationName: 'Docs Co' });
