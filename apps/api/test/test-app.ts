@@ -27,6 +27,8 @@ export async function createTestApp(
     QUEUE_PREFIX: 'knowguard-test',
     // The 283 MB reranker only loads where it is exercised (search tests pass an override).
     RERANKER_MODEL: 'none',
+    // Never call a real model from tests, even when OPENAI_API_KEY is set (AI tests opt into "fake").
+    AI_PROVIDER: 'none',
     ...overrides,
   });
   const moduleRef = await Test.createTestingModule({ imports: [AppModule.forRoot(env)] }).compile();

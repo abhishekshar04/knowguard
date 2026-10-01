@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { toVectorLiteral } from '@knowguard/ai';
 import { authorize } from '@knowguard/authorization';
 import { protectedDocumentSelect, readableDocumentsWhere, toProtectedResource } from '@knowguard/database';
-import type { SearchResponse, SearchResult } from '@knowguard/types';
+import type { SearchResponse } from '@knowguard/types';
 import type { SearchRequest } from '@knowguard/validation';
 
 import { type AuthContext, toAuthorizationContext } from '../auth/auth-context';
@@ -17,6 +17,21 @@ const CANDIDATES_PER_RETRIEVER = 40;
 const RERANK_CANDIDATES = 20;
 /** Searches embed the query and run a cross-encoder: bound per-user cost. */
 const SEARCH_RATE_LIMIT: RateLimitRule = { limit: 60, windowSeconds: 60 };
+
+/** An authorized passage, as used by search results and AI context. */
+export interface RetrievedPassage {
+  chunkId: string;
+  documentId: string;
+  versionId: string;
+  version: number;
+  title: string;
+  content: string;
+  snippet: string;
+  page: number | null;
+  section: string | null;
+  /** Reranker relevance in [0, 1] (normalised RRF when reranking is off). */
+  score: number;
+}
 
 interface Candidate {
   id: string;
@@ -55,70 +70,118 @@ export class SearchService {
 
   async search(auth: AuthContext, request: SearchRequest): Promise<SearchResponse> {
     await this.rateLimiter.consume(`search:user:${auth.userId}`, SEARCH_RATE_LIMIT);
+    const passages = await this.retrieve(auth, request.query, {
+      maxPassages: request.limit,
+      maxPerDocument: 1,
+    });
+    return {
+      query: request.query,
+      results: passages.map((p) => ({
+        documentId: p.documentId,
+        title: p.title,
+        snippet: p.snippet,
+        score: Math.round(p.score * 1000) / 1000,
+        page: p.page,
+        section: p.section,
+        chunkId: p.chunkId,
+        versionId: p.versionId,
+        version: p.version,
+      })),
+    };
+  }
+
+  /**
+   * IDs of READY documents the caller may read — the only documents retrieval may touch.
+   * `restrictTo` narrows further (e.g. "Ask AI about this document"); it can never widen.
+   */
+  async readableDocumentIds(auth: AuthContext, restrictTo?: readonly string[]): Promise<string[]> {
+    const readable = await this.prisma.document.findMany({
+      where: {
+        AND: [
+          readableDocumentsWhere(toAuthorizationContext(auth)),
+          { status: 'READY' },
+          ...(restrictTo ? [{ id: { in: [...restrictTo] } }] : []),
+        ],
+      },
+      select: { id: true },
+    });
+    return readable.map((d) => d.id);
+  }
+
+  /**
+   * Permission-aware hybrid retrieval shared by search and Ask AI: permission filter → keyword +
+   * vector → RRF → rerank → at most `maxPerDocument` passages per document → final engine check.
+   */
+  async retrieve(
+    auth: AuthContext,
+    query: string,
+    options: { maxPassages: number; maxPerDocument: number; restrictTo?: readonly string[] },
+  ): Promise<RetrievedPassage[]> {
     const context = toAuthorizationContext(auth);
 
     // 1. Authorization first: the only documents retrieval may touch.
-    const readable = await this.prisma.document.findMany({
-      where: { AND: [readableDocumentsWhere(context), { status: 'READY' }] },
-      select: { id: true },
-    });
-    if (readable.length === 0) return { query: request.query, results: [] };
-    const documentIds = readable.map((d) => d.id);
+    const documentIds = await this.readableDocumentIds(auth, options.restrictTo);
+    if (documentIds.length === 0) return [];
 
     // 2. Retrieve from both indexes, restricted to those documents and this tenant.
-    const queryVector = toVectorLiteral(await this.models.embeddings.embedQuery(request.query));
+    const queryVector = toVectorLiteral(await this.models.embeddings.embedQuery(query));
     const [vectorHits, keywordHits] = await Promise.all([
       this.vectorCandidates(auth.organizationId, documentIds, queryVector),
-      this.keywordCandidates(auth.organizationId, documentIds, request.query),
+      this.keywordCandidates(auth.organizationId, documentIds, query),
     ]);
 
     // 3. Fuse, then rerank the head of the list with the cross-encoder.
     const fused = reciprocalRankFusion([vectorHits.map((c) => c.id), keywordHits.map((c) => c.id)]);
     const head = [...fused.entries()].sort((a, b) => b[1] - a[1]).slice(0, RERANK_CANDIDATES);
-    if (head.length === 0) return { query: request.query, results: [] };
-
+    if (head.length === 0) return [];
     const chunks = await this.loadChunks(
       auth.organizationId,
       head.map(([id]) => id),
-      request.query,
+      query,
     );
-    const scored = await this.rank(request.query, head, chunks);
+    const scored = await this.rank(query, head, chunks);
 
-    // 4. Best passage per document, then a final engine check on every returned document.
-    const best = new Map<string, { chunk: ChunkRow; score: number }>();
+    // 4. Cap passages per document and overall.
+    const perDocument = new Map<string, number>();
+    const top: Array<{ chunk: ChunkRow; score: number }> = [];
     for (const item of scored) {
-      if (!best.has(item.chunk.document_id)) best.set(item.chunk.document_id, item);
+      const count = perDocument.get(item.chunk.document_id) ?? 0;
+      if (count >= options.maxPerDocument) continue;
+      perDocument.set(item.chunk.document_id, count + 1);
+      top.push(item);
+      if (top.length >= options.maxPassages) break;
     }
-    const top = [...best.values()].slice(0, request.limit);
+
+    // 5. Final engine check on every document before anything leaves this method.
     const documents = await this.prisma.document.findMany({
-      where: { id: { in: top.map((t) => t.chunk.document_id) }, organizationId: auth.organizationId },
+      where: { id: { in: [...perDocument.keys()] }, organizationId: auth.organizationId },
       select: { id: true, title: true, currentVersion: true, ...protectedDocumentSelect },
     });
     const byId = new Map(documents.map((d) => [d.id, d]));
-
-    const results: SearchResult[] = [];
+    const passages: RetrievedPassage[] = [];
     for (const { chunk, score } of top) {
       const doc = byId.get(chunk.document_id);
       if (!doc || !authorize(context, 'READ', toProtectedResource(doc)).allowed) {
         // Should be impossible (the filter is proven equivalent); never return it, and make noise.
         this.logger.error(
-          `Search result for document ${chunk.document_id} failed the final authorization check`,
+          `Retrieved chunk of document ${chunk.document_id} failed the final authorization check`,
         );
         continue;
       }
-      results.push({
-        documentId: doc.id,
-        title: doc.title,
-        snippet: chunk.snippet,
-        score: Math.round(score * 1000) / 1000,
-        page: chunk.metadata?.pageNumber ?? null,
-        section: chunk.metadata?.section ?? null,
+      passages.push({
         chunkId: chunk.id,
+        documentId: doc.id,
         versionId: chunk.version_id,
         version: doc.currentVersion,
+        title: doc.title,
+        content: chunk.content,
+        snippet: chunk.snippet,
+        page: chunk.metadata?.pageNumber ?? null,
+        section: chunk.metadata?.section ?? null,
+        score,
       });
     }
-    return { query: request.query, results };
+    return passages;
   }
 
   /** Nearest neighbours by cosine distance (HNSW; iterative scan keeps filtered results full). */

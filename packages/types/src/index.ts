@@ -296,3 +296,64 @@ export interface SearchResponse {
   query: string;
   results: SearchResult[];
 }
+
+// ── Ask AI (Phase 8) ─────────────────────────────────────────────────────────────────────
+
+/** A source passage given to the model; `index` is the number used in [n] citations. */
+export interface AiSource {
+  index: number;
+  documentId: string;
+  documentTitle: string;
+  version: number;
+  versionId: string;
+  page: number | null;
+  section: string | null;
+  chunkId: string;
+  /** Whether the answer actually cites this source. */
+  cited: boolean;
+}
+
+export interface AiUsage {
+  promptTokens: number;
+  outputTokens: number;
+}
+
+/**
+ * Server-sent events of POST /ai/query, in order:
+ * meta → sources → delta* → done   (or error at any point after meta)
+ */
+export type AiStreamEvent =
+  | { event: 'meta'; data: { conversationId: string } }
+  | { event: 'sources'; data: { sources: AiSource[] } }
+  | { event: 'delta'; data: { text: string } }
+  | { event: 'done'; data: { messageId: string; answer: string; sources: AiSource[]; usage: AiUsage | null } }
+  | { event: 'error'; data: { code: string; message: string } };
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  updatedAt: string;
+}
+
+export interface ConversationMessageView {
+  id: string;
+  role: 'USER' | 'ASSISTANT';
+  status: 'COMPLETE' | 'FAILED';
+  content: string;
+  sources: AiSource[];
+  createdAt: string;
+}
+
+export interface ConversationListResponse {
+  conversations: ConversationSummary[];
+}
+
+export interface ConversationDetails extends ConversationSummary {
+  messages: ConversationMessageView[];
+}
+
+export interface AiStatusResponse {
+  /** Whether an answer-generation provider is configured. */
+  available: boolean;
+  model: string | null;
+}

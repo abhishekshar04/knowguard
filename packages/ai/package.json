@@ -20,7 +20,8 @@
     "test": "jest"
   },
   "dependencies": {
-    "@huggingface/transformers": "4.3.0"
+    "@huggingface/transformers": "4.3.0",
+    "openai": "7.25.0"
   },
   "devDependencies": {
     "@types/jest": "30.0.0",

@@ -11,3 +11,14 @@ export {
   LocalEmbeddingProvider,
 } from './local-embedding-provider';
 export { DEFAULT_RERANKER_MODEL, LocalReranker, type LocalRerankerConfig, type Reranker } from './reranker';
+export {
+  type ChatErrorKind,
+  type ChatMessage,
+  type ChatProvider,
+  ChatProviderError,
+  type ChatRequest,
+  type ChatStreamEvent,
+  type ChatUsage,
+} from './chat';
+export { FakeChatProvider } from './fake-chat-provider';
+export { type OpenAIChatConfig, OpenAIChatProvider } from './openai-chat-provider';

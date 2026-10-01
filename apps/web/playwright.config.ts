@@ -46,6 +46,8 @@ export default defineConfig({
         STORAGE_BUCKET: TEST_BUCKET,
         STORAGE_AUTO_CREATE_BUCKET: 'true',
         QUEUE_PREFIX,
+        // Never call a real model (or spend its quota) from tests, even if OPENAI_API_KEY is set.
+        AI_PROVIDER: 'fake',
       },
     },
     {

@@ -72,10 +72,11 @@ export class TestClient {
     return { token: grant.token, userId: invited.member.id, email };
   }
 
-  /** Deletes everything created in the tracked organizations (documents first: FK order). */
+  /** Deletes everything created in the tracked organizations (conversations and documents first: FK order). */
   async cleanup(): Promise<void> {
     if (this.organizationIds.length === 0) return;
     const where = { organizationId: { in: this.organizationIds } };
+    await this.prisma.conversation.deleteMany({ where });
     await this.prisma.document.deleteMany({ where });
     const memberships = await this.prisma.userOrganization.findMany({ where, select: { userId: true } });
     await this.prisma.user.deleteMany({ where: { id: { in: memberships.map((m) => m.userId) } } });
