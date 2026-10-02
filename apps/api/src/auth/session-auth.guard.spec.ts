@@ -1,6 +1,7 @@
 import type { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
+import type { AuditService } from '../audit/audit.service';
 import { ApiException } from '../common/api-exception';
 import type { AuthContext, AuthenticatedRequest } from './auth-context';
 import { REQUIRED_PERMISSIONS_KEY } from '../authorization/require-permission.decorator';
@@ -33,14 +34,24 @@ function setup(opts: {
     .spyOn(reflector, 'getAllAndOverride')
     .mockImplementation((key: unknown) => opts.metadata?.[key as string] ?? undefined);
   const authenticate = jest.fn().mockResolvedValue(opts.result ?? null);
-  const guard = new SessionAuthGuard(reflector, { authenticate } as unknown as SessionService);
-  const request = { headers: { authorization: opts.authorization } } as AuthenticatedRequest;
+  const record = jest.fn().mockResolvedValue(undefined);
+  const guard = new SessionAuthGuard(
+    reflector,
+    { authenticate } as unknown as SessionService,
+    { record } as unknown as AuditService,
+  );
+  const request = {
+    headers: { authorization: opts.authorization },
+    method: 'POST',
+    route: { path: '/api/v1/things/:id' },
+    params: { id: 'x1' },
+  } as unknown as AuthenticatedRequest;
   const context = {
     getHandler: () => undefined,
     getClass: () => undefined,
     switchToHttp: () => ({ getRequest: () => request }),
   } as unknown as ExecutionContext;
-  return { guard, context, request, authenticate };
+  return { guard, context, request, authenticate, record };
 }
 
 async function codeOf(promise: Promise<unknown>): Promise<string | undefined> {
@@ -115,9 +126,31 @@ describe('SessionAuthGuard', () => {
       await expect(guard.canActivate(context)).resolves.toBe(true);
     });
 
-    it('denies with FORBIDDEN when any required permission is missing', async () => {
-      const { guard, context } = withPermissions(['user.read'], ['user.read', 'user.create']);
+    it('denies with FORBIDDEN when any required permission is missing, and audits it', async () => {
+      const { guard, context, record } = withPermissions(['user.read'], ['user.read', 'user.create']);
       expect(await codeOf(guard.canActivate(context))).toBe('FORBIDDEN');
+      expect(record).toHaveBeenCalledWith({
+        actor: { userId: 'u1', organizationId: 'o1' },
+        action: 'ACCESS_DENIED',
+        resourceType: 'ENDPOINT',
+        result: 'DENIED',
+        metadata: {
+          reason: 'FORBIDDEN',
+          method: 'POST',
+          route: '/api/v1/things/:id',
+          id: 'x1',
+          required: ['user.read', 'user.create'],
+        },
+      });
+    });
+
+    it('does not audit allowed requests or unauthenticated ones', async () => {
+      const allowed = withPermissions(['user.read'], ['user.read']);
+      await allowed.guard.canActivate(allowed.context);
+      const anonymous = setup({ metadata: { [REQUIRED_PERMISSIONS_KEY]: ['user.read'] } });
+      await codeOf(anonymous.guard.canActivate(anonymous.context));
+      expect(allowed.record).not.toHaveBeenCalled();
+      expect(anonymous.record).not.toHaveBeenCalled();
     });
 
     it('authenticates before authorizing (no session → 401, not 403)', async () => {

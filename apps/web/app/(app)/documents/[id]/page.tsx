@@ -1,4 +1,4 @@
-import type { AclEntryView, DocumentDetails } from '@knowguard/types';
+import type { AclEntryView, DocumentDetails, DocumentPreviewResponse } from '@knowguard/types';
 import { Bot, Download, ExternalLink } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
@@ -20,7 +20,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
-import { ApiError, apiFetchRaw, apiRequest } from '@/lib/api';
+import { ApiError, apiRequest } from '@/lib/api';
 import { can } from '@/lib/permissions';
 import { getSessionToken, requireUser } from '@/lib/session';
 import { loadSubjectOptions, type SubjectOptions } from '@/lib/subjects';
@@ -37,7 +37,6 @@ import {
 
 export const metadata: Metadata = { title: 'Document' };
 
-const PREVIEW_BYTES = 64 * 1024;
 const TEXT_TYPES = new Set(['text/plain', 'text/markdown']);
 
 async function loadDocument(id: string, token: string): Promise<DocumentDetails> {
@@ -50,24 +49,16 @@ async function loadDocument(id: string, token: string): Promise<DocumentDetails>
   }
 }
 
-/** First 64 KB of a text document, rendered as plain text (never as HTML). */
+/**
+ * First 64 KB of a text document, rendered as plain text (never as HTML). Uses the API's bounded
+ * preview endpoint, so showing a preview is audited as a view, not a download.
+ */
 async function textPreview(doc: DocumentDetails, token: string): Promise<string | null> {
   if (!TEXT_TYPES.has(doc.mimeType)) return null;
   try {
-    const res = await apiFetchRaw(`/documents/${doc.id}/download`, token);
-    const reader = res.body?.getReader();
-    if (!reader) return null;
-    const chunks: Uint8Array[] = [];
-    let received = 0;
-    while (received < PREVIEW_BYTES) {
-      const { done, value } = await reader.read();
-      if (done || !value) break;
-      chunks.push(value);
-      received += value.length;
-    }
-    await reader.cancel();
-    const text = new TextDecoder('utf-8').decode(Buffer.concat(chunks).subarray(0, PREVIEW_BYTES));
-    return received >= PREVIEW_BYTES ? `${text}\n…` : text;
+    const { preview } = await apiRequest<DocumentPreviewResponse>(`/documents/${doc.id}/preview`, { token });
+    if (!preview) return null;
+    return preview.truncated ? `${preview.text}\n…` : preview.text;
   } catch {
     return null;
   }
@@ -304,7 +295,7 @@ function SharingCard({ doc, subjects }: { doc: DocumentDetails; subjects: Subjec
     ['Roles', subjects.roles],
   ];
   return (
-    <Card data-testid="sharing">
+    <Card id="sharing" data-testid="sharing">
       <CardHeader>
         <CardTitle>Sharing</CardTitle>
         <CardDescription>

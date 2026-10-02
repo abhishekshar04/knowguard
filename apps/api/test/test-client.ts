@@ -1,3 +1,4 @@
+import { purgeAuditLogs } from '@knowguard/database';
 import type { InviteMemberResponse, MeResponse, SessionGrant } from '@knowguard/types';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -83,6 +84,8 @@ export class TestClient {
     await this.prisma.team.deleteMany({ where });
     await this.prisma.department.deleteMany({ where });
     await this.prisma.role.deleteMany({ where });
+    // Audit records are append-only; deleting them needs the explicit purge path.
+    await purgeAuditLogs(this.prisma, where);
     await this.prisma.organization.deleteMany({ where: { id: { in: this.organizationIds } } });
   }
 }

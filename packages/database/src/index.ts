@@ -7,3 +7,4 @@ export {
   readableDocumentsWhere,
   toProtectedResource,
 } from './document-access';
+export { purgeAuditLogs } from './audit';

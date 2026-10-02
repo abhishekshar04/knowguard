@@ -62,5 +62,9 @@ export type SetDocumentAclInput = z.infer<typeof setDocumentAclSchema>;
 export const listDocumentsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).max(10_000).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  /** Narrows the caller's readable documents; never widens them. */
+  status: z.enum(['UPLOADING', 'PROCESSING', 'INDEXING', 'READY', 'FAILED', 'ARCHIVED']).optional(),
+  /** Case-insensitive title match. */
+  q: z.string().trim().min(1).max(200).optional(),
 });
 export type ListDocumentsQuery = z.infer<typeof listDocumentsQuerySchema>;

@@ -287,6 +287,38 @@ describe('read access follows the authorization engine', () => {
   });
 });
 
+describe('listing filters', () => {
+  it('narrows by status and title — never widening what the caller can read', async () => {
+    const marker = `Filterable ${Date.now()}`;
+    const visible = await createDoc(owner.token, { title: `${marker} public`, visibility: 'ORGANIZATION' });
+    const hidden = await createDoc(owner.token, { title: `${marker} private` });
+    await prisma.document.update({ where: { id: visible.id }, data: { status: 'FAILED' } });
+
+    const byTitle = (
+      await api
+        .as(employee.token)
+        .get(`/documents?q=${encodeURIComponent(marker.toLowerCase())}`)
+        .expect(200)
+    ).body as DocumentListResponse;
+    expect(byTitle.documents.map((d) => d.id)).toEqual([visible.id]);
+    expect(byTitle.total).toBe(1);
+
+    const failed = (await api.as(employee.token).get('/documents?status=FAILED&pageSize=100').expect(200))
+      .body as DocumentListResponse;
+    expect(failed.documents.map((d) => d.id)).toContain(visible.id);
+    expect(failed.documents.every((d) => d.status === 'FAILED')).toBe(true);
+
+    const forOwner = (
+      await api
+        .as(owner.token)
+        .get(`/documents?q=${encodeURIComponent(marker)}`)
+        .expect(200)
+    ).body as DocumentListResponse;
+    expect(forOwner.documents.map((d) => d.id).sort()).toEqual([visible.id, hidden.id].sort());
+    await api.as(owner.token).get('/documents?status=DELETED').expect(400);
+  });
+});
+
 describe('sharing (ACL) and editing', () => {
   it('an explicit WRITE grant lets a member edit and upload versions, but not share', async () => {
     const doc = await createDoc(owner.token, { visibility: 'CUSTOM' });

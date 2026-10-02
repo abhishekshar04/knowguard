@@ -1,5 +1,6 @@
 import { hashPassword } from '@knowguard/auth';
 
+import type { AuditService } from '../audit/audit.service';
 import { ApiException } from '../common/api-exception';
 import type { PrismaService } from '../common/prisma.service';
 import type { RateLimiterService } from '../common/rate-limiter.service';
@@ -37,13 +38,15 @@ function setup(user: StoredUser | null) {
   const sessions = {
     issue: jest.fn().mockResolvedValue({ sessionId: 's1', token: 't'.repeat(43), expiresAt: new Date() }),
   };
+  const audit = { record: jest.fn().mockResolvedValue(undefined), recordInBackground: jest.fn() };
   const service = new AuthService(
     prisma as unknown as PrismaService,
     sessions as unknown as SessionService,
     {} as OrganizationsService,
     rateLimiter as unknown as RateLimiterService,
+    audit as unknown as AuditService,
   );
-  return { service, rateLimiter, sessions };
+  return { service, rateLimiter, sessions, audit };
 }
 
 async function failureOf(
@@ -118,6 +121,40 @@ describe('AuthService.login', () => {
       expect(verifyPassword).toHaveBeenCalledTimes(1);
     },
   );
+
+  it('audits a successful login', async () => {
+    const { service, audit } = setup(activeUser());
+    await service.onModuleInit();
+    await service.login({ email: 'a@b.co', password: PASSWORD }, meta);
+    expect(audit.record).toHaveBeenCalledWith({
+      actor: { userId: 'u1', organizationId: 'o1' },
+      action: 'LOGIN',
+      resourceType: 'SESSION',
+    });
+  });
+
+  it('audits failures for known accounts in the background only (no timing difference)', async () => {
+    const known = setup(activeUser());
+    await known.service.onModuleInit();
+    await failureOf(known.service.login({ email: 'a@b.co', password: 'wrong password!!' }, meta));
+    expect(known.audit.record).not.toHaveBeenCalled();
+    expect(known.audit.recordInBackground).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'LOGIN_FAILED',
+        result: 'FAILURE',
+        metadata: { reason: 'INVALID_PASSWORD' },
+      }),
+    );
+
+    // No organization to attribute the attempt to: nothing is recorded.
+    for (const user of [null, activeUser({ memberships: [] })]) {
+      const unknown = setup(user);
+      await unknown.service.onModuleInit();
+      await failureOf(unknown.service.login({ email: 'a@b.co', password: PASSWORD }, meta));
+      expect(unknown.audit.recordInBackground).not.toHaveBeenCalled();
+      expect(unknown.audit.record).not.toHaveBeenCalled();
+    }
+  });
 
   it('counts the attempt against IP and email limits BEFORE verifying the password', async () => {
     const { service, rateLimiter } = setup(activeUser());

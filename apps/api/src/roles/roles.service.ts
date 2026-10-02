@@ -4,6 +4,7 @@ import type { Prisma } from '@knowguard/database';
 import type { PermissionInfo, RoleSummary } from '@knowguard/types';
 import { type CreateRoleInput, roleKeyFromName, type UpdateRoleInput } from '@knowguard/validation';
 
+import { actorOf, AuditService } from '../audit/audit.service';
 import type { AuthContext } from '../auth/auth-context';
 import { canGrantRoles, isSubset, MANAGEMENT_DENIAL_MESSAGES } from '../authorization/management-policy';
 import { assertOwnershipRemains } from '../authorization/ownership';
@@ -40,7 +41,10 @@ const exceedsYourAccess = (): ApiException =>
  */
 @Injectable()
 export class RolesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   listPermissions(): PermissionInfo[] {
     return Object.entries(PERMISSIONS).map(([key, description]) => ({
@@ -76,6 +80,13 @@ export class RolesService {
         },
         select: roleSelect,
       });
+      await this.audit.record({
+        actor: actorOf(auth),
+        action: 'PERMISSION_CHANGE',
+        resourceType: 'ROLE',
+        resourceId: row.id,
+        metadata: { change: 'ROLE_CREATED', role: row.key, after: this.keys(row) },
+      });
       return this.toSummary(row, auth);
     } catch (error) {
       if (isUniqueViolation(error)) throw this.nameTaken();
@@ -87,8 +98,10 @@ export class RolesService {
     if (input.permissions && !isSubset(input.permissions, auth.permissions)) throw exceedsYourAccess();
     const permissionIds = input.permissions ? await this.permissionIds(input.permissions) : null;
 
+    let before: string[] = [];
     const row = await this.prisma.$transaction(async (tx) => {
       const role = await this.loadEditable(tx, auth, id);
+      before = this.keys(role);
       await tx.role.update({
         where: { id_organizationId: { id: role.id, organizationId: auth.organizationId } },
         data: {
@@ -105,11 +118,25 @@ export class RolesService {
       }
       return tx.role.findUniqueOrThrow({ where: { id: role.id }, select: roleSelect });
     });
+    const after = this.keys(row);
+    await this.audit.record({
+      actor: actorOf(auth),
+      action: 'PERMISSION_CHANGE',
+      resourceType: 'ROLE',
+      resourceId: row.id,
+      metadata: {
+        change: 'ROLE_UPDATED',
+        role: row.key,
+        fields: Object.keys(input),
+        added: after.filter((key) => !before.includes(key)),
+        removed: before.filter((key) => !after.includes(key)),
+      },
+    });
     return this.toSummary(row, auth);
   }
 
   async remove(auth: AuthContext, id: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+    const removed = await this.prisma.$transaction(async (tx) => {
       const role = await this.loadEditable(tx, auth, id);
       if (role._count.users > 0) {
         throw new ApiException(
@@ -125,6 +152,14 @@ export class RolesService {
         where: { organizationId: auth.organizationId, targetId: role.id },
       });
       await tx.role.delete({ where: { id: role.id } });
+      return role;
+    });
+    await this.audit.record({
+      actor: actorOf(auth),
+      action: 'PERMISSION_CHANGE',
+      resourceType: 'ROLE',
+      resourceId: removed.id,
+      metadata: { change: 'ROLE_DELETED', role: removed.key, before: this.keys(removed) },
     });
   }
 

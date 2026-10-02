@@ -32,6 +32,8 @@ import type {
   UpdateDocumentInput,
 } from '@knowguard/validation';
 
+import { markAudited } from '../audit/access-denied.interceptor';
+import { actorOf, AuditService } from '../audit/audit.service';
 import { type AuthContext, toAuthorizationContext } from '../auth/auth-context';
 import { ApiException, notFound } from '../common/api-exception';
 import { IngestionQueue } from '../common/ingestion-queue';
@@ -82,6 +84,9 @@ const AUDIENCE_TYPE: Partial<Record<CreateDocumentInput['visibility'], AclSubjec
   DEPARTMENT: 'DEPARTMENT',
 };
 
+const PREVIEW_BYTES = 64 * 1024;
+const PREVIEW_TYPES = new Set(['text/plain', 'text/markdown']);
+
 const accessDenied = (): ApiException =>
   new ApiException(
     'DOCUMENT_ACCESS_DENIED',
@@ -106,6 +111,7 @@ export class DocumentsService {
     private readonly prisma: PrismaService,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     private readonly ingestion: IngestionQueue,
+    private readonly audit: AuditService,
     @Inject(API_ENV) env: ApiEnv,
   ) {
     this.maxBytes = env.MAX_UPLOAD_MB * 1024 * 1024;
@@ -115,7 +121,13 @@ export class DocumentsService {
 
   async list(auth: AuthContext, query: ListDocumentsQuery): Promise<DocumentListResponse> {
     const context = toAuthorizationContext(auth);
-    const where = readableDocumentsWhere(context);
+    const where: Prisma.DocumentWhereInput = {
+      AND: [
+        readableDocumentsWhere(context),
+        ...(query.status ? [{ status: query.status }] : []),
+        ...(query.q ? [{ title: { contains: query.q, mode: 'insensitive' as const } }] : []),
+      ],
+    };
     const [total, rows] = await Promise.all([
       this.prisma.document.count({ where }),
       this.prisma.document.findMany({
@@ -131,6 +143,43 @@ export class DocumentsService {
       page: query.page,
       pageSize: query.pageSize,
       total,
+    };
+  }
+
+  /** A user opening a document (audited as DOCUMENT_VIEW); internal reads use get(). */
+  async view(auth: AuthContext, id: string): Promise<DocumentDetails> {
+    const details = await this.get(auth, id);
+    await this.audit.recordView(auth, id);
+    return details;
+  }
+
+  /**
+   * The start of a text document's current version, for on-page previews. Bounded server-side
+   * so a preview can never become an unaudited full download. Audited as a (collapsed) view.
+   */
+  async preview(auth: AuthContext, id: string): Promise<{ text: string; truncated: boolean } | null> {
+    const row = await this.requireAccess(toAuthorizationContext(auth), id, 'READ');
+    if (!row.storageKey || !PREVIEW_TYPES.has(row.mimeType)) return null;
+    let body: Readable;
+    try {
+      body = (await this.storage.getObject(row.storageKey)).body;
+    } catch (error) {
+      if (error instanceof ObjectNotFoundError) throw notFound('document file');
+      throw this.storageUnavailable(error);
+    }
+    const chunks: Buffer[] = [];
+    let received = 0;
+    for await (const chunk of body as AsyncIterable<Buffer>) {
+      chunks.push(chunk);
+      received += chunk.length;
+      if (received > PREVIEW_BYTES) break;
+    }
+    body.destroy();
+    await this.audit.recordView(auth, id, { preview: true });
+    const bytes = Buffer.concat(chunks);
+    return {
+      text: new TextDecoder('utf-8').decode(bytes.subarray(0, PREVIEW_BYTES)),
+      truncated: bytes.length > PREVIEW_BYTES,
     };
   }
 
@@ -209,6 +258,13 @@ export class DocumentsService {
     if (!version) throw notFound('document version');
     try {
       const object = await this.storage.getObject(version.storageKey);
+      await this.audit.record({
+        actor: actorOf(auth),
+        action: 'DOCUMENT_DOWNLOAD',
+        resourceType: 'DOCUMENT',
+        resourceId: id,
+        metadata: { versionId: targetVersionId, current: targetVersionId === row.currentVersionId },
+      });
       return {
         body: object.body,
         mimeType: version.mimeType,
@@ -281,6 +337,19 @@ export class DocumentsService {
       throw error;
     }
 
+    await this.audit.record({
+      actor: actorOf(auth),
+      action: 'DOCUMENT_CREATE',
+      resourceType: 'DOCUMENT',
+      resourceId: documentId,
+      metadata: {
+        versionId,
+        visibility: input.visibility,
+        audienceIds: input.audienceIds,
+        mimeType: upload.mimeType,
+        size: upload.size,
+      },
+    });
     await this.ingestion.enqueueProcessDocument({
       organizationId: auth.organizationId,
       documentId,
@@ -334,6 +403,19 @@ export class DocumentsService {
       throw error;
     }
 
+    await this.audit.record({
+      actor: actorOf(auth),
+      action: 'DOCUMENT_UPDATE',
+      resourceType: 'DOCUMENT',
+      resourceId: id,
+      metadata: {
+        change: 'NEW_VERSION',
+        version: next,
+        versionId,
+        mimeType: upload.mimeType,
+        size: upload.size,
+      },
+    });
     await this.ingestion.enqueueProcessDocument({
       organizationId: auth.organizationId,
       documentId: id,
@@ -351,6 +433,16 @@ export class DocumentsService {
         ...(input.description !== undefined ? { description: input.description || null } : {}),
       },
     });
+    await this.audit.record({
+      actor: actorOf(auth),
+      action: 'DOCUMENT_UPDATE',
+      resourceType: 'DOCUMENT',
+      resourceId: id,
+      metadata: {
+        change: 'DETAILS',
+        fields: Object.keys(input).filter((key) => key === 'title' || key === 'description'),
+      },
+    });
     return this.get(auth, id);
   }
 
@@ -360,7 +452,7 @@ export class DocumentsService {
     id: string,
     input: SetDocumentVisibilityInput,
   ): Promise<DocumentDetails> {
-    await this.requireAccess(toAuthorizationContext(auth), id, 'SHARE');
+    const before = await this.requireAccess(toAuthorizationContext(auth), id, 'SHARE');
     await this.validateAudience(auth.organizationId, input.visibility, input.audienceIds);
     await this.prisma.$transaction(async (tx) => {
       await tx.document.update({
@@ -379,6 +471,16 @@ export class DocumentsService {
           })),
         });
       }
+    });
+    await this.audit.record({
+      actor: actorOf(auth),
+      action: 'DOCUMENT_SHARE',
+      resourceType: 'DOCUMENT',
+      resourceId: id,
+      metadata: {
+        before: { visibility: before.visibility, audienceIds: before.audience.map((a) => a.targetId) },
+        after: { visibility: input.visibility, audienceIds: input.audienceIds },
+      },
     });
     return this.get(auth, id);
   }
@@ -427,6 +529,15 @@ export class DocumentsService {
         data: { updatedAt: new Date() },
       });
     });
+    const describe = (e: { subjectType: string; subjectId: string; permission: string; effect: string }) =>
+      `${e.effect} ${e.permission} ${e.subjectType}:${e.subjectId}`;
+    await this.audit.record({
+      actor: actorOf(auth),
+      action: 'PERMISSION_CHANGE',
+      resourceType: 'DOCUMENT',
+      resourceId: id,
+      metadata: { before: row.permissions.map(describe), after: entries.map(describe) },
+    });
     return this.get(auth, id);
   }
 
@@ -439,6 +550,13 @@ export class DocumentsService {
     });
     await this.prisma.document.delete({
       where: { id_organizationId: { id, organizationId: auth.organizationId } },
+    });
+    await this.audit.record({
+      actor: actorOf(auth),
+      action: 'DOCUMENT_DELETE',
+      resourceType: 'DOCUMENT',
+      resourceId: id,
+      metadata: { versions: versions.length },
     });
     await this.deleteObjectsQuietly(versions.map((v) => v.storageKey));
   }
@@ -466,6 +584,13 @@ export class DocumentsService {
       where: { id, organizationId: auth.organizationId, currentVersionId: row.currentVersionId },
       data: { status: 'PROCESSING', processingError: null },
     });
+    await this.audit.record({
+      actor: actorOf(auth),
+      action: 'DOCUMENT_UPDATE',
+      resourceType: 'DOCUMENT',
+      resourceId: id,
+      metadata: { change: 'REINDEX', versionId: row.currentVersionId },
+    });
     return this.get(auth, id);
   }
 
@@ -486,9 +611,34 @@ export class DocumentsService {
     });
     if (!row) throw notFound('document');
     const resource = toProtectedResource(row);
-    if (!authorize(context, 'READ', resource).allowed) throw notFound('document');
-    if (action !== 'READ' && !authorize(context, action, resource).allowed) throw accessDenied();
+    // Both refusals are audited with the document; the caller still learns nothing from a 404.
+    if (!authorize(context, 'READ', resource).allowed) {
+      throw await this.denied(context, id, action, notFound('document'));
+    }
+    if (action !== 'READ' && !authorize(context, action, resource).allowed) {
+      throw await this.denied(context, id, action, accessDenied());
+    }
     return row;
+  }
+
+  private async denied(
+    context: AuthorizationContext,
+    id: string,
+    attempted: ResourceAction,
+    error: ApiException,
+  ): Promise<ApiException> {
+    await this.audit.record({
+      actor: { userId: context.userId, organizationId: context.organizationId },
+      action: 'ACCESS_DENIED',
+      resourceType: 'DOCUMENT',
+      resourceId: id,
+      result: 'DENIED',
+      metadata: {
+        attempted,
+        response: error.getStatus() === HttpStatus.NOT_FOUND ? 'NOT_FOUND' : 'FORBIDDEN',
+      },
+    });
+    return markAudited(error);
   }
 
   private capabilities(context: AuthorizationContext, resource: ProtectedResource): DocumentCapabilities {

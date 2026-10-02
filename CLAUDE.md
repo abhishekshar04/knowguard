@@ -25,16 +25,16 @@ whenever you need exact lines — the graph is for orientation, not a substitute
 
 ## Layout
 
-| Path                                                        | What                                                                                  |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `apps/api`                                                  | NestJS API (modular monolith): auth, members, roles, structure, documents, search, ai |
-| `apps/worker`                                               | BullMQ ingestion worker: extract → chunk → embed → store                              |
-| `apps/web`                                                  | Next.js BFF + UI (server actions; the browser never calls the API directly)           |
-| `packages/authorization`                                    | Pure authorization engine `authorize()` + permission catalog                          |
-| `packages/database`                                         | Prisma schema, migrations, seed, `readableDocumentsWhere` (SQL twin of the engine)    |
-| `packages/ai`                                               | Local embeddings + reranker, `ChatProvider` + OpenAI adapter (all model code here)    |
-| `packages/storage`, `validation`, `types`, `auth`, `logger` | Object storage, zod schemas, contracts, credentials, logging                          |
-| `docs/adr/`                                                 | Architecture decisions 0001–0011 — read the relevant ADR before changing a subsystem  |
+| Path                                                        | What                                                                                         |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `apps/api`                                                  | NestJS API (modular monolith): auth, members, roles, structure, documents, search, ai, audit |
+| `apps/worker`                                               | BullMQ ingestion worker: extract → chunk → embed → store                                     |
+| `apps/web`                                                  | Next.js BFF + UI (server actions; the browser never calls the API directly)                  |
+| `packages/authorization`                                    | Pure authorization engine `authorize()` + permission catalog                                 |
+| `packages/database`                                         | Prisma schema, migrations, seed, `readableDocumentsWhere` (SQL twin of the engine)           |
+| `packages/ai`                                               | Local embeddings + reranker, `ChatProvider` + OpenAI adapter (all model code here)           |
+| `packages/storage`, `validation`, `types`, `auth`, `logger` | Object storage, zod schemas, contracts, credentials, logging                                 |
+| `docs/adr/`                                                 | Architecture decisions 0001–0012 — read the relevant ADR before changing a subsystem         |
 
 ## Security rules that must hold
 
@@ -48,6 +48,9 @@ whenever you need exact lines — the graph is for orientation, not a substitute
   granting beyond your own permissions, an active owner must remain.
 - Ask AI builds its context only from `SearchService.retrieve()` (the permission-filtered
   pipeline); never add a second retrieval path. Tests pin `AI_PROVIDER=fake` (ADR 0011).
+- Audit security-relevant actions with `AuditService` (ADR 0012); never put content, queries,
+  questions or secrets in metadata. `audit_logs` is append-only (DB trigger); delete only via
+  `purgeAuditLogs()`.
 - Tenant-owned tables use composite `(id, organization_id)` foreign keys.
 - Never commit `.env` or secrets; env vars are validated with zod and must also be listed in
   `turbo.json` `globalPassThroughEnv` or tasks won't see them in CI.

@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
@@ -15,7 +16,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { DocumentDetails, DocumentListResponse } from '@knowguard/types';
+import type { DocumentDetails, DocumentListResponse, DocumentPreviewResponse } from '@knowguard/types';
 import {
   type CreateDocumentInput,
   createDocumentSchema,
@@ -77,7 +78,18 @@ export class DocumentsController {
   @Get(':id')
   @RequirePermission('document.read')
   get(@CurrentAuth() auth: AuthContext, @Param('id', documentId) id: string): Promise<DocumentDetails> {
-    return this.documents.get(auth, id);
+    return this.documents.view(auth, id);
+  }
+
+  /** First 64 KB of a text document, for on-page previews (`preview: null` for other types). */
+  @Get(':id/preview')
+  @RequirePermission('document.read')
+  @Header('Cache-Control', 'no-store')
+  async preview(
+    @CurrentAuth() auth: AuthContext,
+    @Param('id', documentId) id: string,
+  ): Promise<DocumentPreviewResponse> {
+    return { preview: await this.documents.preview(auth, id) };
   }
 
   @Get(':id/download')

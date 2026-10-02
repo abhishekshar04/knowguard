@@ -48,6 +48,7 @@ model Organization {
   roles       Role[]
   documents   Document[]
   conversations Conversation[]
+  auditLogs     AuditLog[]
 
   @@map("organizations")
 }
@@ -491,4 +492,71 @@ model ConversationMessage {
 
   @@index([conversationId, createdAt])
   @@map("conversation_messages")
+}
+
+// ── Audit log (Phase 9, ADR 0012) ───────────────────────────────────────────────────────
+
+enum AuditAction {
+  DOCUMENT_VIEW
+  DOCUMENT_DOWNLOAD
+  DOCUMENT_CREATE
+  DOCUMENT_UPDATE
+  DOCUMENT_DELETE
+  DOCUMENT_SHARE
+  PERMISSION_CHANGE
+  USER_CREATED
+  USER_INVITED
+  USER_SUSPENDED
+  USER_REACTIVATED
+  ROLE_CHANGED
+  GROUP_CHANGED
+  LOGIN
+  LOGIN_FAILED
+  ACCESS_DENIED
+  SEARCH
+  AI_QUERY
+}
+
+enum AuditResult {
+  SUCCESS
+  DENIED
+  FAILURE
+}
+
+enum AuditResourceType {
+  DOCUMENT
+  USER
+  ROLE
+  TEAM
+  DEPARTMENT
+  CONVERSATION
+  SESSION
+  ENDPOINT
+}
+
+/// Append-only: a database trigger rejects UPDATE, and DELETE unless the session explicitly
+/// enables purging (retention, tests). Deliberately no foreign key to users or memberships, so
+/// records outlive the people they describe.
+model AuditLog {
+  id             String            @id @default(uuid(7)) @db.Uuid
+  organizationId String            @map("organization_id") @db.Uuid
+  /// The acting user; null for system actions.
+  userId         String?           @map("user_id") @db.Uuid
+  action         AuditAction
+  resourceType   AuditResourceType @map("resource_type")
+  resourceId     String?           @map("resource_id") @db.Uuid
+  result         AuditResult
+  /// Small, non-sensitive details (never content, questions, secrets or tokens).
+  metadata       Json              @default("{}")
+  ip             String?           @db.VarChar(64)
+  userAgent      String?           @map("user_agent") @db.VarChar(512)
+  createdAt      DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, action, createdAt])
+  @@index([organizationId, userId, createdAt])
+  @@index([organizationId, resourceType, resourceId])
+  @@map("audit_logs")
 }

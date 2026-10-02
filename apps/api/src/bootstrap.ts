@@ -3,6 +3,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 
 import { ApiExceptionFilter } from './common/api-exception.filter';
+import { requestContextMiddleware } from './common/request-context';
 import { createUntrustedForwardingDetector } from './common/untrusted-forwarding.detector';
 import type { ApiEnv } from './config/api-env';
 
@@ -19,6 +20,8 @@ export function configureApp(app: INestApplication, env: ApiEnv): void {
 
   app.setGlobalPrefix(API_PREFIX);
   app.use(helmet());
+  // After "trust proxy" is set, so the recorded client IP is the resolved one.
+  app.use(requestContextMiddleware);
   const proxyLogger = new Logger('TrustProxy');
   app.use(createUntrustedForwardingDetector((message) => proxyLogger.warn(message)));
   // No CORS: browsers never call the API directly (they go through the Next.js BFF), so
