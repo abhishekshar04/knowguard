@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 
+import { purgeAuditLogs } from '@knowguard/database';
 import type {
   DepartmentDetails,
   InviteMemberResponse,
@@ -87,6 +88,7 @@ afterAll(async () => {
     await prisma.team.deleteMany({ where });
     await prisma.department.deleteMany({ where });
     await prisma.role.deleteMany({ where });
+    await purgeAuditLogs(prisma, { organizationId: { in: orgIds } });
     await prisma.organization.deleteMany({ where: { id: { in: orgIds } } });
   }
   await app?.close();

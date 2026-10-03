@@ -357,3 +357,105 @@ export interface AiStatusResponse {
   available: boolean;
   model: string | null;
 }
+
+/** GET /documents/:id/preview: the start of a text document; null for other file types. */
+export interface DocumentPreviewResponse {
+  preview: { text: string; truncated: boolean } | null;
+}
+
+// ── Audit and analytics (Phase 9) ────────────────────────────────────────────────────────
+
+export const AUDIT_ACTIONS = [
+  'DOCUMENT_VIEW',
+  'DOCUMENT_DOWNLOAD',
+  'DOCUMENT_CREATE',
+  'DOCUMENT_UPDATE',
+  'DOCUMENT_DELETE',
+  'DOCUMENT_SHARE',
+  'PERMISSION_CHANGE',
+  'USER_CREATED',
+  'USER_INVITED',
+  'USER_SUSPENDED',
+  'USER_REACTIVATED',
+  'ROLE_CHANGED',
+  'GROUP_CHANGED',
+  'LOGIN',
+  'LOGIN_FAILED',
+  'ACCESS_DENIED',
+  'SEARCH',
+  'AI_QUERY',
+] as const;
+export type AuditActionValue = (typeof AUDIT_ACTIONS)[number];
+
+export const AUDIT_RESULTS = ['SUCCESS', 'DENIED', 'FAILURE'] as const;
+export type AuditResultValue = (typeof AUDIT_RESULTS)[number];
+
+export const AUDIT_RESOURCE_TYPES = [
+  'DOCUMENT',
+  'USER',
+  'ROLE',
+  'TEAM',
+  'DEPARTMENT',
+  'CONVERSATION',
+  'SESSION',
+  'ENDPOINT',
+] as const;
+export type AuditResourceTypeValue = (typeof AUDIT_RESOURCE_TYPES)[number];
+
+export interface AuditLogEntry {
+  id: string;
+  createdAt: string;
+  action: AuditActionValue;
+  result: AuditResultValue;
+  /** Null for system actions; `name`/`email` are null if the user no longer exists. */
+  actor: { id: string; name: string | null; email: string | null } | null;
+  resourceType: AuditResourceTypeValue;
+  resourceId: string | null;
+  /**
+   * Human-readable name of the resource, when the viewer may see it. Document titles are only
+   * shown for documents the viewer can read, so the audit log never discloses them.
+   */
+  resourceLabel: string | null;
+  metadata: Record<string, unknown>;
+  ip: string | null;
+}
+
+export interface AuditLogPage {
+  entries: AuditLogEntry[];
+  /** Pass as `cursor` to fetch older entries; null at the end. */
+  nextCursor: string | null;
+}
+
+export interface AnalyticsDay {
+  /** UTC date, YYYY-MM-DD. */
+  date: string;
+  searches: number;
+  aiQueries: number;
+  views: number;
+  downloads: number;
+  uploads: number;
+  denied: number;
+}
+
+export interface AnalyticsOverview {
+  days: number;
+  members: { active: number; suspended: number; invited: number };
+  documents: {
+    total: number;
+    byStatus: Partial<Record<DocumentStatusValue, number>>;
+    storageBytes: number;
+    chunks: number;
+  };
+  activity: AnalyticsDay[];
+  ai: {
+    questions: number;
+    answered: number;
+    notFound: number;
+    failed: number;
+    promptTokens: number;
+    outputTokens: number;
+  };
+  /** Most viewed or cited documents; titles only for documents the viewer can read. */
+  topDocuments: Array<{ documentId: string; title: string | null; views: number; citations: number }>;
+  topUsers: Array<{ user: { id: string; name: string | null; email: string | null }; events: number }>;
+}

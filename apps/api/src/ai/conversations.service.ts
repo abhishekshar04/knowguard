@@ -8,6 +8,8 @@ import type {
   ConversationMessageView,
 } from '@knowguard/types';
 
+import { markAudited } from '../audit/access-denied.interceptor';
+import { actorOf, AuditService } from '../audit/audit.service';
 import { type AuthContext, toAuthorizationContext } from '../auth/auth-context';
 import { notFound } from '../common/api-exception';
 import { PrismaService } from '../common/prisma.service';
@@ -34,7 +36,10 @@ type MessageRow = Prisma.ConversationMessageGetPayload<object>;
  */
 @Injectable()
 export class ConversationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async list(auth: AuthContext): Promise<ConversationListResponse> {
     const conversations = await this.prisma.conversation.findMany({
@@ -71,15 +76,33 @@ export class ConversationsService {
     const { count } = await this.prisma.conversation.deleteMany({
       where: { id, organizationId: auth.organizationId, userId: auth.userId },
     });
-    if (count === 0) throw notFound('conversation');
+    if (count === 0) throw await this.notFoundFor(auth, id, 'DELETE');
   }
 
   async findOwned(auth: AuthContext, id: string) {
     const conversation = await this.prisma.conversation.findFirst({
       where: { id, organizationId: auth.organizationId, userId: auth.userId },
     });
-    if (!conversation) throw notFound('conversation');
+    if (!conversation) throw await this.notFoundFor(auth, id, 'READ');
     return conversation;
+  }
+
+  /** Another member's conversation answers 404 like a missing one, and the attempt is audited. */
+  private async notFoundFor(auth: AuthContext, id: string, attempted: string) {
+    const someoneElses = await this.prisma.conversation.count({
+      where: { id, organizationId: auth.organizationId },
+    });
+    if (someoneElses > 0) {
+      await this.audit.record({
+        actor: actorOf(auth),
+        action: 'ACCESS_DENIED',
+        resourceType: 'CONVERSATION',
+        resourceId: id,
+        result: 'DENIED',
+        metadata: { attempted, response: 'NOT_FOUND' },
+      });
+    }
+    return markAudited(notFound('conversation'));
   }
 
   create(auth: AuthContext, question: string) {

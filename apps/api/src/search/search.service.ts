@@ -5,6 +5,7 @@ import { protectedDocumentSelect, readableDocumentsWhere, toProtectedResource } 
 import type { SearchResponse } from '@knowguard/types';
 import type { SearchRequest } from '@knowguard/validation';
 
+import { actorOf, AuditService } from '../audit/audit.service';
 import { type AuthContext, toAuthorizationContext } from '../auth/auth-context';
 import { PrismaService } from '../common/prisma.service';
 import { type RateLimitRule, RateLimiterService } from '../common/rate-limiter.service';
@@ -66,6 +67,7 @@ export class SearchService {
     private readonly prisma: PrismaService,
     private readonly models: SearchModels,
     private readonly rateLimiter: RateLimiterService,
+    private readonly audit: AuditService,
   ) {}
 
   async search(auth: AuthContext, request: SearchRequest): Promise<SearchResponse> {
@@ -73,6 +75,13 @@ export class SearchService {
     const passages = await this.retrieve(auth, request.query, {
       maxPassages: request.limit,
       maxPerDocument: 1,
+    });
+    // The query itself is not recorded: it can be as sensitive as the documents.
+    await this.audit.record({
+      actor: actorOf(auth),
+      action: 'SEARCH',
+      resourceType: 'ENDPOINT',
+      metadata: { results: passages.length, limit: request.limit },
     });
     return {
       query: request.query,

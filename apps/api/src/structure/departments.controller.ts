@@ -7,6 +7,7 @@ import {
   updateDepartmentSchema,
 } from '@knowguard/validation';
 
+import { actorOf, AuditService } from '../audit/audit.service';
 import type { AuthContext } from '../auth/auth-context';
 import { CurrentAuth } from '../auth/auth.decorators';
 import { RequirePermission } from '../authorization/require-permission.decorator';
@@ -19,7 +20,21 @@ const memberId = new ParseIdPipe('member');
 
 @Controller('departments')
 export class DepartmentsController {
-  constructor(private readonly structure: StructureService) {}
+  constructor(
+    private readonly structure: StructureService,
+    private readonly audit: AuditService,
+  ) {}
+
+  /** Group changes alter who inherits access to department-visible documents: always audited. */
+  private changed(auth: AuthContext, id: string, metadata: Record<string, unknown>): Promise<void> {
+    return this.audit.record({
+      actor: actorOf(auth),
+      action: 'GROUP_CHANGED',
+      resourceType: 'DEPARTMENT',
+      resourceId: id,
+      metadata,
+    });
+  }
 
   /** Organization structure is visible to every member (organization.read). */
   @Get()
@@ -30,21 +45,25 @@ export class DepartmentsController {
 
   @Post()
   @RequirePermission('department.manage')
-  create(
+  async create(
     @CurrentAuth() auth: AuthContext,
     @Body(new ZodValidationPipe(createDepartmentSchema)) body: CreateDepartmentInput,
   ): Promise<DepartmentDetails> {
-    return this.structure.createDepartment(auth.organizationId, body);
+    const created = await this.structure.createDepartment(auth.organizationId, body);
+    await this.changed(auth, created.id, { change: 'CREATED', name: created.name });
+    return created;
   }
 
   @Patch(':id')
   @RequirePermission('department.manage')
-  update(
+  async update(
     @CurrentAuth() auth: AuthContext,
     @Param('id', departmentId) id: string,
     @Body(new ZodValidationPipe(updateDepartmentSchema)) body: UpdateDepartmentInput,
   ): Promise<DepartmentDetails> {
-    return this.structure.updateDepartment(auth.organizationId, id, body);
+    const updated = await this.structure.updateDepartment(auth.organizationId, id, body);
+    await this.changed(auth, id, { change: 'UPDATED', fields: Object.keys(body) });
+    return updated;
   }
 
   @Delete(':id')
@@ -52,6 +71,7 @@ export class DepartmentsController {
   @RequirePermission('department.manage')
   async remove(@CurrentAuth() auth: AuthContext, @Param('id', departmentId) id: string): Promise<void> {
     await this.structure.deleteDepartment(auth.organizationId, id);
+    await this.changed(auth, id, { change: 'DELETED' });
   }
 
   @Put(':id/members/:userId')
@@ -63,6 +83,7 @@ export class DepartmentsController {
     @Param('userId', memberId) userId: string,
   ): Promise<void> {
     await this.structure.addDepartmentMember(auth.organizationId, id, userId);
+    await this.changed(auth, id, { change: 'MEMBER_ADDED', userId });
   }
 
   @Delete(':id/members/:userId')
@@ -74,5 +95,6 @@ export class DepartmentsController {
     @Param('userId', memberId) userId: string,
   ): Promise<void> {
     await this.structure.removeDepartmentMember(auth.organizationId, id, userId);
+    await this.changed(auth, id, { change: 'MEMBER_REMOVED', userId });
   }
 }

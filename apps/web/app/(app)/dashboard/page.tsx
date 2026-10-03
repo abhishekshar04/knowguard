@@ -1,27 +1,34 @@
-import type { DependencyStatus } from '@knowguard/types';
-import { CheckCircle2, CircleAlert, CircleX, MailWarning } from 'lucide-react';
+import type {
+  AnalyticsOverview,
+  ConversationListResponse,
+  DependencyStatus,
+  DocumentListResponse,
+} from '@knowguard/types';
+import {
+  Bot,
+  CheckCircle2,
+  CircleAlert,
+  CircleX,
+  FileText,
+  MailWarning,
+  MessageSquare,
+  Search,
+  Upload,
+} from 'lucide-react';
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
+import { StatusBadge } from '@/components/documents/document-labels';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { getApiHealth } from '@/lib/api';
-import { requireUser } from '@/lib/session';
+import { apiRequest, getApiHealth } from '@/lib/api';
+import { can } from '@/lib/permissions';
+import { getSessionToken, requireUser } from '@/lib/session';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 // Health is live data; never prerender it at build time.
 export const dynamic = 'force-dynamic';
-
-const ROADMAP = [
-  { phase: 1, name: 'Foundation', detail: 'Monorepo, API, worker, database, seed' },
-  { phase: 2, name: 'Authentication', detail: 'Register, login, sessions' },
-  { phase: 3, name: 'Multi-tenancy', detail: 'Organizations, users, departments, teams' },
-  { phase: 4, name: 'Authorization', detail: 'RBAC, ACLs, policy engine' },
-  { phase: 5, name: 'Documents', detail: 'Upload, storage, versions, permissions' },
-  { phase: 6, name: 'Ingestion', detail: 'Extraction, chunking, embeddings' },
-  { phase: 7, name: 'Search', detail: 'Keyword, vector, hybrid' },
-  { phase: 8, name: 'AI', detail: 'Permission-aware RAG with citations' },
-] as const;
-const CURRENT_PHASE = 7;
 
 function StatusRow({ label, status }: { label: string; status: DependencyStatus | 'unreachable' }) {
   const up = status === 'up';
@@ -38,6 +45,34 @@ function StatusRow({ label, status }: { label: string; status: DependencyStatus 
 
 export default async function DashboardPage() {
   const [me, result] = await Promise.all([requireUser(), getApiHealth()]);
+  const token = await getSessionToken();
+  const optional = <T,>(promise: Promise<T>, fallback: T) => promise.catch(() => fallback);
+  const [recentDocuments, conversations, weekly] = await Promise.all([
+    can(me, 'document.read')
+      ? optional(
+          apiRequest<DocumentListResponse>('/documents?pageSize=5', { token }).then((r) => r.documents),
+          [],
+        )
+      : [],
+    can(me, 'ai.query')
+      ? optional(
+          apiRequest<ConversationListResponse>('/ai/conversations', { token }).then((r) =>
+            r.conversations.slice(0, 5),
+          ),
+          [],
+        )
+      : [],
+    can(me, 'audit.read')
+      ? optional(
+          apiRequest<AnalyticsOverview>('/analytics/overview?days=7', { token }).then((o) => ({
+            searches: o.activity.reduce((n, d) => n + d.searches, 0),
+            aiQueries: o.activity.reduce((n, d) => n + d.aiQueries, 0),
+            denied: o.activity.reduce((n, d) => n + d.denied, 0),
+          })),
+          null,
+        )
+      : null,
+  ]);
 
   return (
     <div className="flex flex-col gap-8">
@@ -97,6 +132,94 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
 
+      <div className="flex flex-wrap gap-2">
+        <Button asChild variant="outline">
+          <Link href="/search">
+            <Search aria-hidden />
+            Search documents
+          </Link>
+        </Button>
+        {can(me, 'ai.query') ? (
+          <Button asChild variant="outline">
+            <Link href="/ask">
+              <Bot aria-hidden />
+              Ask AI
+            </Link>
+          </Button>
+        ) : null}
+        {can(me, 'document.create') ? (
+          <Button asChild variant="outline">
+            <Link href="/documents">
+              <Upload aria-hidden />
+              Upload a document
+            </Link>
+          </Button>
+        ) : null}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Recently updated documents</CardTitle>
+            <CardDescription>Only documents you can read.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {recentDocuments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No documents yet.</p>
+            ) : (
+              <ul className="flex flex-col gap-2" data-testid="recent-documents">
+                {recentDocuments.map((doc) => (
+                  <li key={doc.id} className="flex items-center justify-between gap-3 text-sm">
+                    <Link
+                      href={`/documents/${doc.id}`}
+                      className="flex min-w-0 items-center gap-2 hover:underline"
+                    >
+                      <FileText className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                      <span className="truncate">{doc.title}</span>
+                    </Link>
+                    <StatusBadge status={doc.status} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        {can(me, 'ai.query') ? (
+          <Card>
+            <CardHeader>
+              <CardTitle>Your recent conversations</CardTitle>
+              <CardDescription>Private to you.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {conversations.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No conversations yet.{' '}
+                  <Link href="/ask" className="underline">
+                    Ask a question
+                  </Link>
+                  .
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {conversations.map((c) => (
+                    <li key={c.id} className="text-sm">
+                      <Link
+                        href={`/ask?c=${c.id}`}
+                        className="flex min-w-0 items-center gap-2 hover:underline"
+                      >
+                        <MessageSquare className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                        <span className="truncate">{c.title}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        ) : null}
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
@@ -126,30 +249,31 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Build roadmap</CardTitle>
-            <CardDescription>Security and tenancy are proven before any AI is added.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ol className="flex flex-col gap-2">
-              {ROADMAP.map((item) => (
-                <li key={item.phase} className="flex items-center gap-3 text-sm">
-                  <span className="w-5 text-right tabular-nums text-muted-foreground">{item.phase}</span>
-                  <span className="flex-1">
-                    <span className="font-medium">{item.name}</span>{' '}
-                    <span className="text-muted-foreground">— {item.detail}</span>
-                  </span>
-                  {item.phase < CURRENT_PHASE ? (
-                    <Badge variant="success">done</Badge>
-                  ) : item.phase === CURRENT_PHASE ? (
-                    <Badge variant="secondary">current</Badge>
-                  ) : null}
-                </li>
-              ))}
-            </ol>
-          </CardContent>
-        </Card>
+        {weekly ? (
+          <Card data-testid="weekly-activity">
+            <CardHeader>
+              <CardTitle>Last 7 days</CardTitle>
+              <CardDescription>Organization activity from the audit log.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <dl className="grid grid-cols-3 gap-3 text-sm">
+                {[
+                  ['Searches', weekly.searches],
+                  ['AI questions', weekly.aiQueries],
+                  ['Access denied', weekly.denied],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd className="text-xl font-semibold tabular-nums">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <Link href="/admin/analytics" className="text-sm hover:underline">
+                Open analytics →
+              </Link>
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import { PERMISSION_KEYS } from '@knowguard/authorization';
+import { purgeAuditLogs } from '@knowguard/database';
 import type { MeResponse, SessionGrant } from '@knowguard/types';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -50,6 +51,7 @@ afterAll(async () => {
     await prisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
     const where = { organizationId: { in: createdOrgIds } };
     await prisma.role.deleteMany({ where });
+    await purgeAuditLogs(prisma, { organizationId: { in: createdOrgIds } });
     await prisma.organization.deleteMany({ where: { id: { in: createdOrgIds } } });
   }
   await app?.close();

@@ -7,6 +7,7 @@ import {
   updateTeamSchema,
 } from '@knowguard/validation';
 
+import { actorOf, AuditService } from '../audit/audit.service';
 import type { AuthContext } from '../auth/auth-context';
 import { CurrentAuth } from '../auth/auth.decorators';
 import { RequirePermission } from '../authorization/require-permission.decorator';
@@ -19,7 +20,21 @@ const memberId = new ParseIdPipe('member');
 
 @Controller('teams')
 export class TeamsController {
-  constructor(private readonly structure: StructureService) {}
+  constructor(
+    private readonly structure: StructureService,
+    private readonly audit: AuditService,
+  ) {}
+
+  /** Group changes alter who inherits access to team-visible documents: always audited. */
+  private changed(auth: AuthContext, id: string, metadata: Record<string, unknown>): Promise<void> {
+    return this.audit.record({
+      actor: actorOf(auth),
+      action: 'GROUP_CHANGED',
+      resourceType: 'TEAM',
+      resourceId: id,
+      metadata,
+    });
+  }
 
   @Get()
   @RequirePermission('organization.read')
@@ -29,21 +44,25 @@ export class TeamsController {
 
   @Post()
   @RequirePermission('team.manage')
-  create(
+  async create(
     @CurrentAuth() auth: AuthContext,
     @Body(new ZodValidationPipe(createTeamSchema)) body: CreateTeamInput,
   ): Promise<TeamDetails> {
-    return this.structure.createTeam(auth.organizationId, body);
+    const created = await this.structure.createTeam(auth.organizationId, body);
+    await this.changed(auth, created.id, { change: 'CREATED', name: created.name });
+    return created;
   }
 
   @Patch(':id')
   @RequirePermission('team.manage')
-  update(
+  async update(
     @CurrentAuth() auth: AuthContext,
     @Param('id', teamId) id: string,
     @Body(new ZodValidationPipe(updateTeamSchema)) body: UpdateTeamInput,
   ): Promise<TeamDetails> {
-    return this.structure.updateTeam(auth.organizationId, id, body);
+    const updated = await this.structure.updateTeam(auth.organizationId, id, body);
+    await this.changed(auth, id, { change: 'UPDATED', fields: Object.keys(body) });
+    return updated;
   }
 
   @Delete(':id')
@@ -51,6 +70,7 @@ export class TeamsController {
   @RequirePermission('team.manage')
   async remove(@CurrentAuth() auth: AuthContext, @Param('id', teamId) id: string): Promise<void> {
     await this.structure.deleteTeam(auth.organizationId, id);
+    await this.changed(auth, id, { change: 'DELETED' });
   }
 
   @Put(':id/members/:userId')
@@ -62,6 +82,7 @@ export class TeamsController {
     @Param('userId', memberId) userId: string,
   ): Promise<void> {
     await this.structure.addTeamMember(auth.organizationId, id, userId);
+    await this.changed(auth, id, { change: 'MEMBER_ADDED', userId });
   }
 
   @Delete(':id/members/:userId')
@@ -73,5 +94,6 @@ export class TeamsController {
     @Param('userId', memberId) userId: string,
   ): Promise<void> {
     await this.structure.removeTeamMember(auth.organizationId, id, userId);
+    await this.changed(auth, id, { change: 'MEMBER_REMOVED', userId });
   }
 }

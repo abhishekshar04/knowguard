@@ -9,6 +9,7 @@ import type { Prisma } from '@knowguard/database';
 import type { InvitationGrant, InvitationPreview, SessionGrant } from '@knowguard/types';
 import type { AcceptInvitationInput } from '@knowguard/validation';
 
+import { AuditService } from '../audit/audit.service';
 import { SessionService } from '../auth/session.service';
 import { ApiException } from '../common/api-exception';
 import { PrismaService } from '../common/prisma.service';
@@ -34,6 +35,7 @@ export class InvitationsService {
     private readonly prisma: PrismaService,
     private readonly sessions: SessionService,
     private readonly rateLimiter: RateLimiterService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -109,6 +111,13 @@ export class InvitationsService {
       }
       await this.revokeOutstanding(tx, userId, organizationId);
       return this.sessions.issue(tx, { userId, organizationId, meta });
+    });
+    await this.audit.record({
+      actor: { userId, organizationId },
+      action: 'USER_CREATED',
+      resourceType: 'USER',
+      resourceId: userId,
+      metadata: { via: 'INVITATION' },
     });
     return { token: issued.token, expiresAt: issued.expiresAt.toISOString() };
   }

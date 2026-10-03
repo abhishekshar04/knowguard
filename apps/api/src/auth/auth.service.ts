@@ -6,6 +6,7 @@ import { Prisma } from '@knowguard/database';
 import type { MeResponse, SessionGrant } from '@knowguard/types';
 import type { LoginInput, RegisterInput } from '@knowguard/validation';
 
+import { AuditService } from '../audit/audit.service';
 import { ApiException, unauthenticated } from '../common/api-exception';
 import { PrismaService } from '../common/prisma.service';
 import { type RateLimitRule, RateLimiterService } from '../common/rate-limiter.service';
@@ -53,6 +54,7 @@ export class AuthService implements OnModuleInit {
     private readonly sessions: SessionService,
     private readonly organizations: OrganizationsService,
     private readonly rateLimiter: RateLimiterService,
+    private readonly audit: AuditService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -87,7 +89,20 @@ export class AuthService implements OnModuleInit {
             slug,
             ownerId: user.id,
           });
-          return this.sessions.issue(tx, { userId: user.id, organizationId: organization.id, meta });
+          const session = await this.sessions.issue(tx, {
+            userId: user.id,
+            organizationId: organization.id,
+            meta,
+          });
+          return { ...session, userId: user.id, organizationId: organization.id };
+        });
+        const actor = { userId: issued.userId, organizationId: issued.organizationId };
+        await this.audit.record({
+          actor,
+          action: 'USER_CREATED',
+          resourceType: 'USER',
+          resourceId: issued.userId,
+          metadata: { via: 'REGISTRATION', roles: ['OWNER'] },
         });
         return { token: issued.token, expiresAt: issued.expiresAt.toISOString() };
       } catch (error) {
@@ -135,6 +150,16 @@ export class AuthService implements OnModuleInit {
     const membership = user?.memberships[0];
 
     if (!user || !user.passwordHash || !passwordOk || user.status !== 'ACTIVE' || !membership) {
+      if (user && membership) {
+        // Not awaited: a known account must not answer measurably slower than an unknown one.
+        this.audit.recordInBackground({
+          actor: { userId: user.id, organizationId: membership.organizationId },
+          action: 'LOGIN_FAILED',
+          resourceType: 'SESSION',
+          result: 'FAILURE',
+          metadata: { reason: user.status !== 'ACTIVE' ? 'ACCOUNT_INACTIVE' : 'INVALID_PASSWORD' },
+        });
+      }
       throw invalidCredentials();
     }
 
@@ -143,6 +168,11 @@ export class AuthService implements OnModuleInit {
     const issued = await this.prisma.$transaction(async (tx) => {
       await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
       return this.sessions.issue(tx, { userId: user.id, organizationId: membership.organizationId, meta });
+    });
+    await this.audit.record({
+      actor: { userId: user.id, organizationId: membership.organizationId },
+      action: 'LOGIN',
+      resourceType: 'SESSION',
     });
     return { token: issued.token, expiresAt: issued.expiresAt.toISOString() };
   }

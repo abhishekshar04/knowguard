@@ -1,6 +1,8 @@
 import { type CanActivate, type ExecutionContext, HttpStatus, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
+import { endpointMetadata, markAudited } from '../audit/access-denied.interceptor';
+import { actorOf, AuditService } from '../audit/audit.service';
 import { REQUIRED_PERMISSIONS_KEY } from '../authorization/require-permission.decorator';
 import { ApiException, forbidden, unauthenticated } from '../common/api-exception';
 import type { AuthenticatedRequest } from './auth-context';
@@ -19,6 +21,7 @@ export class SessionAuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly sessions: SessionService,
+    private readonly audit: AuditService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -37,10 +40,13 @@ export class SessionAuthGuard implements CanActivate {
       this.reflector.getAllAndOverride<boolean>(REQUIRE_VERIFIED_EMAIL_KEY, targets) &&
       !auth.emailVerified
     ) {
-      throw new ApiException(
-        'EMAIL_NOT_VERIFIED',
-        'Verify your email address to perform this action.',
-        HttpStatus.FORBIDDEN,
+      throw await this.denied(
+        request,
+        new ApiException(
+          'EMAIL_NOT_VERIFIED',
+          'Verify your email address to perform this action.',
+          HttpStatus.FORBIDDEN,
+        ),
       );
     }
     const required = this.reflector.getAllAndOverride<string[] | undefined>(
@@ -48,8 +54,26 @@ export class SessionAuthGuard implements CanActivate {
       targets,
     );
     if (required && !required.every((permission) => auth.permissions.has(permission))) {
-      throw forbidden();
+      throw await this.denied(request, forbidden(), { required });
     }
     return true;
+  }
+
+  /** Capability failures are audited here: they never reach handlers or interceptors. */
+  private async denied(
+    request: AuthenticatedRequest,
+    error: ApiException,
+    extra: Record<string, unknown> = {},
+  ): Promise<ApiException> {
+    if (request.auth) {
+      await this.audit.record({
+        actor: actorOf(request.auth),
+        action: 'ACCESS_DENIED',
+        resourceType: 'ENDPOINT',
+        result: 'DENIED',
+        metadata: endpointMetadata(request, error.code, extra),
+      });
+    }
+    return markAudited(error);
   }
 }

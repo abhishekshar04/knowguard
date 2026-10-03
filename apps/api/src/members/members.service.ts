@@ -3,6 +3,7 @@ import type { Prisma } from '@knowguard/database';
 import type { InvitationGrant, InviteMemberResponse, MemberStatus, MemberSummary } from '@knowguard/types';
 import type { InviteMemberInput } from '@knowguard/validation';
 
+import { actorOf, AuditService } from '../audit/audit.service';
 import type { AuthContext } from '../auth/auth-context';
 import { SessionService } from '../auth/session.service';
 import {
@@ -63,6 +64,7 @@ export class MembersService {
     private readonly sessions: SessionService,
     private readonly invitations: InvitationsService,
     private readonly rateLimiter: RateLimiterService,
+    private readonly audit: AuditService,
   ) {}
 
   async list(auth: AuthContext): Promise<MemberSummary[]> {
@@ -84,8 +86,9 @@ export class MembersService {
     if (!role) throw notFound('role');
     denied(canGrantRoles(auth.permissions, [role]));
 
+    let result: InviteMemberResponse;
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      result = await this.prisma.$transaction(async (tx) => {
         const user = await tx.user.create({
           data: { email: input.email, name: input.name, status: 'INVITED' },
           select: { id: true },
@@ -115,10 +118,19 @@ export class MembersService {
       }
       throw error;
     }
+    // The invitation link is a credential: never recorded.
+    await this.audit.record({
+      actor: actorOf(auth),
+      action: 'USER_INVITED',
+      resourceType: 'USER',
+      resourceId: result.member.id,
+      metadata: { roles: [input.roleKey], expiresAt: result.invitation.expiresAt },
+    });
+    return result;
   }
 
   async reissueInvitation(auth: AuthContext, userId: string): Promise<InvitationGrant> {
-    return this.prisma.$transaction(async (tx) => {
+    const grant = await this.prisma.$transaction(async (tx) => {
       const target = await this.loadMember(tx, auth.organizationId, userId);
       this.assertCanManage(auth, target);
       if (effectiveStatus(target) !== 'INVITED') {
@@ -134,14 +146,24 @@ export class MembersService {
         invitedById: auth.userId,
       });
     });
+    await this.audit.record({
+      actor: actorOf(auth),
+      action: 'USER_INVITED',
+      resourceType: 'USER',
+      resourceId: userId,
+      metadata: { reissued: true, expiresAt: grant.expiresAt },
+    });
+    return grant;
   }
 
   /** Suspends the membership and signs the member out everywhere in this organization. */
   async suspend(auth: AuthContext, userId: string): Promise<MemberSummary> {
+    let changed = false;
     const row = await this.prisma.$transaction(async (tx) => {
       const target = await this.loadMember(tx, auth.organizationId, userId);
       this.assertCanManage(auth, target);
       if (target.status === 'SUSPENDED') return target;
+      changed = true;
 
       await tx.userOrganization.update({
         where: { userId_organizationId: { userId, organizationId: auth.organizationId } },
@@ -152,15 +174,25 @@ export class MembersService {
       await assertOwnershipRemains(tx, auth.organizationId);
       return this.loadMember(tx, auth.organizationId, userId);
     });
+    if (changed) {
+      await this.audit.record({
+        actor: actorOf(auth),
+        action: 'USER_SUSPENDED',
+        resourceType: 'USER',
+        resourceId: userId,
+      });
+    }
     return this.toSummary(row, auth);
   }
 
   /** Restores a suspended membership: ACTIVE if they had set a password, otherwise INVITED. */
   async reactivate(auth: AuthContext, userId: string): Promise<MemberSummary> {
+    let changed = false;
     const row = await this.prisma.$transaction(async (tx) => {
       const target = await this.loadMember(tx, auth.organizationId, userId);
       this.assertCanManage(auth, target);
       if (target.status !== 'SUSPENDED') return target;
+      changed = true;
 
       const account = await tx.user.findUniqueOrThrow({
         where: { id: userId },
@@ -172,6 +204,14 @@ export class MembersService {
       });
       return this.loadMember(tx, auth.organizationId, userId);
     });
+    if (changed) {
+      await this.audit.record({
+        actor: actorOf(auth),
+        action: 'USER_REACTIVATED',
+        resourceType: 'USER',
+        resourceId: userId,
+      });
+    }
     return this.toSummary(row, auth);
   }
 
@@ -183,9 +223,11 @@ export class MembersService {
     const roles = await this.loadRoles(auth.organizationId, roleKeys);
     denied(canGrantRoles(auth.permissions, roles));
 
+    let before: string[] = [];
     const row = await this.prisma.$transaction(async (tx) => {
       const target = await this.loadMember(tx, auth.organizationId, userId);
       this.assertCanManage(auth, target);
+      before = roleKeysOf(target.roles);
 
       await tx.userRole.deleteMany({ where: { userId, organizationId: auth.organizationId } });
       await tx.userRole.createMany({
@@ -193,6 +235,19 @@ export class MembersService {
       });
       await assertOwnershipRemains(tx, auth.organizationId);
       return this.loadMember(tx, auth.organizationId, userId);
+    });
+    const after = roleKeysOf(row.roles);
+    await this.audit.record({
+      actor: actorOf(auth),
+      action: 'ROLE_CHANGED',
+      resourceType: 'USER',
+      resourceId: userId,
+      metadata: {
+        before,
+        after,
+        added: after.filter((key) => !before.includes(key)),
+        removed: before.filter((key) => !after.includes(key)),
+      },
     });
     return this.toSummary(row, auth);
   }

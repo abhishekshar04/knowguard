@@ -4,6 +4,8 @@ import { readableDocumentsWhere } from '@knowguard/database';
 import type { AiSource, AiStatusResponse, AiStreamEvent } from '@knowguard/types';
 import type { AiQueryInput } from '@knowguard/validation';
 
+import { markAudited } from '../audit/access-denied.interceptor';
+import { actorOf, AuditService } from '../audit/audit.service';
 import { type AuthContext, toAuthorizationContext } from '../auth/auth-context';
 import { ApiException, notFound } from '../common/api-exception';
 import { PrismaService } from '../common/prisma.service';
@@ -57,6 +59,7 @@ export class AiService {
     private readonly search: SearchService,
     private readonly models: SearchModels,
     private readonly conversations: ConversationsService,
+    private readonly audit: AuditService,
   ) {}
 
   status(): AiStatusResponse {
@@ -103,6 +106,7 @@ export class AiService {
           question: query.message,
           history,
           passages: relevant,
+          documentId: query.documentId ?? null,
           signal,
         }),
     };
@@ -115,9 +119,20 @@ export class AiService {
     question: string;
     history: PromptTurn[];
     passages: RetrievedPassage[];
+    documentId: string | null;
     signal: AbortSignal;
   }): AsyncGenerator<AiStreamEvent> {
     const { auth, provider, conversationId, passages, signal } = input;
+    // Audited without the question or answer text (spec §28: no unnecessarily sensitive content).
+    const recordQuery = (outcome: Record<string, unknown>, failed = false) =>
+      this.audit.record({
+        actor: actorOf(auth),
+        action: 'AI_QUERY',
+        resourceType: 'CONVERSATION',
+        resourceId: conversationId,
+        result: failed ? 'FAILURE' : 'SUCCESS',
+        metadata: { ...outcome, scopedToDocumentId: input.documentId, sourceCount: passages.length },
+      });
     const sources = passages.map(toSource);
     yield { event: 'meta', data: { conversationId } };
     yield { event: 'sources', data: { sources } };
@@ -128,6 +143,7 @@ export class AiService {
         role: 'ASSISTANT',
         content: NO_ANSWER,
       });
+      await recordQuery({ outcome: 'NO_ANSWER', messageId });
       yield { event: 'delta', data: { text: NO_ANSWER } };
       yield { event: 'done', data: { messageId, answer: NO_ANSWER, sources, usage: null } };
       return;
@@ -180,6 +196,16 @@ export class AiService {
         model: provider.model,
         usage,
       });
+      await recordQuery(
+        {
+          outcome: 'FAILED',
+          errorCode: failure.code,
+          model: provider.model,
+          promptTokens: usage?.promptTokens ?? null,
+          outputTokens: usage?.outputTokens ?? null,
+        },
+        true,
+      );
       if (!signal.aborted) yield { event: 'error', data: failure };
       return;
     }
@@ -198,6 +224,14 @@ export class AiService {
       `AI answer ${messageId}: model=${provider.model} sources=${sources.length} cited=${cited.size} ` +
         `promptTokens=${usage?.promptTokens ?? '?'} outputTokens=${usage?.outputTokens ?? '?'} ms=${Date.now() - started}`,
     );
+    await recordQuery({
+      outcome: 'ANSWERED',
+      messageId,
+      model: provider.model,
+      citedDocumentIds: [...new Set(finalSources.filter((s) => s.cited).map((s) => s.documentId))],
+      promptTokens: usage?.promptTokens ?? null,
+      outputTokens: usage?.outputTokens ?? null,
+    });
     yield { event: 'done', data: { messageId, answer, sources: finalSources, usage } };
   }
 
@@ -207,7 +241,22 @@ export class AiService {
       where: { AND: [readableDocumentsWhere(toAuthorizationContext(auth)), { id: documentId }] },
       select: { status: true },
     });
-    if (!document) throw notFound('document');
+    if (!document) {
+      const exists = await this.prisma.document.count({
+        where: { id: documentId, organizationId: auth.organizationId },
+      });
+      if (exists > 0) {
+        await this.audit.record({
+          actor: actorOf(auth),
+          action: 'ACCESS_DENIED',
+          resourceType: 'DOCUMENT',
+          resourceId: documentId,
+          result: 'DENIED',
+          metadata: { attempted: 'ASK_AI', response: 'NOT_FOUND' },
+        });
+      }
+      throw markAudited(notFound('document'));
+    }
     if (document.status !== 'READY') {
       throw new ApiException(
         'DOCUMENT_NOT_READY',
