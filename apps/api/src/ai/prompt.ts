@@ -45,8 +45,40 @@ export function neutralizeSourceTags(text: string): string {
   return text.replace(/<(\s*\/?\s*sources?)/gi, '‹$1');
 }
 
+/** Zero-width, bidi-control and other invisible format characters (Unicode category Cf). */
+const INVISIBLE = /\p{Cf}/gu;
+/** C0/C1 control characters other than tab and newline. */
+// eslint-disable-next-line no-control-regex -- matching control characters is the point
+const CONTROL = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F]/g;
+
+/**
+ * Chat-template control sequences used by common model families (ChatML / Llama 3 `<|…|>`,
+ * Llama 2 `[INST]` and `<<SYS>>`, Gemma `<start_of_turn>`). Hosted APIs treat them as plain text,
+ * but a self-hosted server behind OPENAI_BASE_URL may render prompts as one string, where they
+ * would start a new role.
+ */
+const TEMPLATE_TOKENS: ReadonlyArray<[RegExp, string]> = [
+  [/<\|/g, '‹|'],
+  [/\|>/g, '|›'],
+  [/\[(\/?)INST\]/gi, '($1INST)'],
+  [/<<(\/?)SYS>>/gi, '‹‹$1SYS››'],
+  [/<(\/?)(start_of_turn|end_of_turn|bos|eos|s)>/gi, '‹$1$2›'],
+];
+
+/**
+ * Prepares untrusted text (document content, titles, questions, earlier turns) for a prompt:
+ * NFKC normalization (look-alikes such as full-width `＜／source＞` become plain ASCII before the
+ * checks below), invisible and control characters removed (so a zero-width space inside `</source>` cannot hide a
+ * delimiter), then chat-template tokens and source delimiters neutralized.
+ */
+export function sanitizeUntrusted(text: string): string {
+  let clean = text.normalize('NFKC').replace(INVISIBLE, '').replace(CONTROL, '');
+  for (const [pattern, replacement] of TEMPLATE_TOKENS) clean = clean.replace(pattern, replacement);
+  return neutralizeSourceTags(clean);
+}
+
 function attribute(value: string): string {
-  return neutralizeSourceTags(value)
+  return sanitizeUntrusted(value)
     .replace(/[\r\n\t]+/g, ' ')
     .replace(/"/g, "'")
     .slice(0, 200);
@@ -57,11 +89,10 @@ export function buildSourcesBlock(sources: readonly PromptSource[]): string {
     const attrs = [`id="${source.index}"`, `title="${attribute(source.title)}"`];
     if (source.section) attrs.push(`section="${attribute(source.section)}"`);
     if (source.page !== null) attrs.push(`page="${source.page}"`);
-    const content =
-      source.content.length > MAX_SOURCE_CHARS
-        ? `${source.content.slice(0, MAX_SOURCE_CHARS)}…`
-        : source.content;
-    return `<source ${attrs.join(' ')}>\n${neutralizeSourceTags(content.trim())}\n</source>`;
+    // Sanitize first, so truncation counts what the model sees and the ellipsis is not normalized.
+    const clean = sanitizeUntrusted(source.content).trim();
+    const content = clean.length > MAX_SOURCE_CHARS ? `${clean.slice(0, MAX_SOURCE_CHARS)}…` : clean;
+    return `<source ${attrs.join(' ')}>\n${content}\n</source>`;
   });
   return `<sources>\n${blocks.join('\n')}\n</sources>`;
 }
@@ -77,10 +108,13 @@ export function buildMessages(input: {
 }): ChatMessage[] {
   return [
     { role: 'system', content: SYSTEM_PROMPT },
-    ...input.history.map((turn) => ({ role: turn.role, content: stripCitations(turn.content) })),
+    ...input.history.map((turn) => ({
+      role: turn.role,
+      content: sanitizeUntrusted(stripCitations(turn.content)),
+    })),
     {
       role: 'user',
-      content: `${buildSourcesBlock(input.sources)}\n\nQuestion: ${neutralizeSourceTags(input.question)}`,
+      content: `${buildSourcesBlock(input.sources)}\n\nQuestion: ${sanitizeUntrusted(input.question)}`,
     },
   ];
 }

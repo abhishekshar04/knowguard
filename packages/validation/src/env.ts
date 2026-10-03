@@ -101,6 +101,12 @@ export const apiEnvSchema = z
      * to the BFF's address/subnet so clients cannot spoof their IP for rate limiting.
      */
     TRUST_PROXY: z.string().min(1).default('loopback'),
+    /**
+     * Per-member request budget for the whole API (any request / changes only), per minute.
+     * Stricter limits on login, search, Ask AI and invitations apply on top (ADR 0013).
+     */
+    API_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(10).max(100_000).default(600),
+    API_WRITE_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(5).max(100_000).default(120),
     ...storageEnvShape,
     ...queueEnvShape,
     ...embeddingEnvShape,

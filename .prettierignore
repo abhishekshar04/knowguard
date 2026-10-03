@@ -9,3 +9,6 @@ test-results
 playwright-report
 blob-report
 graphify-out
+
+# Third-party Claude Code skills (installed by `uipro init --ai claude`); not our code.
+.claude/skills

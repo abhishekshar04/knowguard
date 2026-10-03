@@ -1,4 +1,6 @@
-import { type Browser, expect, type Page, test } from '@playwright/test';
+import type { Browser, Page } from '@playwright/test';
+
+import { expect, test } from './fixtures';
 
 import { PASSWORD, registerViaUi, uniqueEmail, isolateClientIp } from './helpers';
 

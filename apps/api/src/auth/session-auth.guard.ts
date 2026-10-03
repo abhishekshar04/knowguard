@@ -1,15 +1,18 @@
-import { type CanActivate, type ExecutionContext, HttpStatus, Injectable } from '@nestjs/common';
+import { type CanActivate, type ExecutionContext, HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
 import { endpointMetadata, markAudited } from '../audit/access-denied.interceptor';
 import { actorOf, AuditService } from '../audit/audit.service';
 import { REQUIRED_PERMISSIONS_KEY } from '../authorization/require-permission.decorator';
 import { ApiException, forbidden, unauthenticated } from '../common/api-exception';
+import { RateLimiterService } from '../common/rate-limiter.service';
+import { API_ENV, type ApiEnv } from '../config/api-env';
 import type { AuthenticatedRequest } from './auth-context';
 import { IS_PUBLIC_KEY, REQUIRE_VERIFIED_EMAIL_KEY } from './auth.decorators';
 import { SessionService } from './session.service';
 
 const BEARER = /^Bearer ([A-Za-z0-9_-]+)$/;
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 /**
  * Global guard: every route requires a valid session unless marked @Public().
@@ -22,6 +25,8 @@ export class SessionAuthGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly sessions: SessionService,
     private readonly audit: AuditService,
+    private readonly rateLimiter: RateLimiterService,
+    @Inject(API_ENV) private readonly env: ApiEnv,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -35,6 +40,21 @@ export class SessionAuthGuard implements CanActivate {
     const auth = await this.sessions.authenticate(token);
     if (!auth) throw unauthenticated();
     request.auth = auth;
+
+    // A per-member budget for the whole API, so no single session (or stolen token, or runaway
+    // script in a new UI) can flood it. Counted per user, across all their sessions.
+    await this.rateLimiter.consume(
+      `api:user:${auth.userId}`,
+      { limit: this.env.API_RATE_LIMIT_PER_MINUTE, windowSeconds: 60 },
+      { failOpen: true },
+    );
+    if (!SAFE_METHODS.has(request.method)) {
+      await this.rateLimiter.consume(
+        `api:user-write:${auth.userId}`,
+        { limit: this.env.API_WRITE_RATE_LIMIT_PER_MINUTE, windowSeconds: 60 },
+        { failOpen: true },
+      );
+    }
 
     if (
       this.reflector.getAllAndOverride<boolean>(REQUIRE_VERIFIED_EMAIL_KEY, targets) &&

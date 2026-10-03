@@ -3,6 +3,8 @@ import { Reflector } from '@nestjs/core';
 
 import type { AuditService } from '../audit/audit.service';
 import { ApiException } from '../common/api-exception';
+import type { RateLimiterService } from '../common/rate-limiter.service';
+import type { ApiEnv } from '../config/api-env';
 import type { AuthContext, AuthenticatedRequest } from './auth-context';
 import { REQUIRED_PERMISSIONS_KEY } from '../authorization/require-permission.decorator';
 import { IS_PUBLIC_KEY, REQUIRE_VERIFIED_EMAIL_KEY } from './auth.decorators';
@@ -35,10 +37,13 @@ function setup(opts: {
     .mockImplementation((key: unknown) => opts.metadata?.[key as string] ?? undefined);
   const authenticate = jest.fn().mockResolvedValue(opts.result ?? null);
   const record = jest.fn().mockResolvedValue(undefined);
+  const consume = jest.fn().mockResolvedValue(undefined);
   const guard = new SessionAuthGuard(
     reflector,
     { authenticate } as unknown as SessionService,
     { record } as unknown as AuditService,
+    { consume } as unknown as RateLimiterService,
+    { API_RATE_LIMIT_PER_MINUTE: 600, API_WRITE_RATE_LIMIT_PER_MINUTE: 120 } as ApiEnv,
   );
   const request = {
     headers: { authorization: opts.authorization },
@@ -51,7 +56,7 @@ function setup(opts: {
     getClass: () => undefined,
     switchToHttp: () => ({ getRequest: () => request }),
   } as unknown as ExecutionContext;
-  return { guard, context, request, authenticate, record };
+  return { guard, context, request, authenticate, record, consume };
 }
 
 async function codeOf(promise: Promise<unknown>): Promise<string | undefined> {
@@ -111,6 +116,26 @@ describe('SessionAuthGuard', () => {
       metadata: { [REQUIRE_VERIFIED_EMAIL_KEY]: true },
     });
     await expect(guard.canActivate(context)).resolves.toBe(true);
+  });
+
+  it('charges authenticated requests to the member’s API budget (writes twice)', async () => {
+    const write = setup({ authorization: `Bearer ${TOKEN}`, result: auth() });
+    await write.guard.canActivate(write.context);
+    expect(write.consume.mock.calls.map(([key]) => key)).toEqual(['api:user:u1', 'api:user-write:u1']);
+    expect(write.consume).toHaveBeenCalledWith(
+      'api:user:u1',
+      { limit: 600, windowSeconds: 60 },
+      { failOpen: true },
+    );
+
+    const read = setup({ authorization: `Bearer ${TOKEN}`, result: auth() });
+    (read.request as { method: string }).method = 'GET';
+    await read.guard.canActivate(read.context);
+    expect(read.consume.mock.calls.map(([key]) => key)).toEqual(['api:user:u1']);
+
+    const anonymous = setup({});
+    await codeOf(anonymous.guard.canActivate(anonymous.context));
+    expect(anonymous.consume).not.toHaveBeenCalled();
   });
 
   describe('@RequirePermission()', () => {

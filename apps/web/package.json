@@ -8,7 +8,8 @@
     "start": "dotenv -e ../../.env -- next start --port 3000",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test:browser": "dotenv -e ../../.env -- playwright test"
+    "test:browser": "dotenv -e ../../.env -- playwright test",
+    "check:bundle": "node scripts/check-client-bundle.mjs"
   },
   "dependencies": {
     "@knowguard/types": "workspace:*",

@@ -72,11 +72,23 @@ jobs:
           path: ~/.cache/knowguard/models
           key: models-${{ env.EMBEDDING_MODEL }}-${{ env.RERANKER_MODEL }}
 
+      # Fails fast, before anything else runs, if a credential was committed (ADR 0013).
+      - name: Secret scan
+        run: pnpm security:secrets
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # High or critical advisories in production dependencies fail the build.
+      - name: Dependency audit
+        run: pnpm security:audit
+
       - name: Build
         run: pnpm build
+
+      # Nothing server-side (env names, secret values, credentials) may reach the browser bundle.
+      - name: Browser bundle check
+        run: pnpm --filter @knowguard/web check:bundle
 
       - name: Lint
         run: pnpm lint
