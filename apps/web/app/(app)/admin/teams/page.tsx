@@ -9,7 +9,8 @@ import Link from 'next/link';
 
 import { ActionForm } from '@/components/admin/action-form';
 import { GroupCard } from '@/components/admin/group-card';
-import { AccessDenied, PageHeader } from '@/components/page-header';
+import { UsersRound } from 'lucide-react';
+import { AccessDenied, EmptyState, PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -82,7 +83,11 @@ export default async function AdminTeamsPage() {
         </Card>
       ) : null}
 
-      {teams.length === 0 ? <p className="text-sm text-muted-foreground">No teams yet.</p> : null}
+      {teams.length === 0 ? (
+        <EmptyState icon={UsersRound} title="No teams yet">
+          Teams are working groups inside a department. Documents can be shared with a team.
+        </EmptyState>
+      ) : null}
       <div className="grid gap-4 md:grid-cols-2">
         {teams.map((team) => (
           <GroupCard

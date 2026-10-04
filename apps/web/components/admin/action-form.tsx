@@ -1,6 +1,6 @@
 'use client';
 
-import { Check, Copy } from 'lucide-react';
+import { Check, CircleAlert, CircleCheck, Copy } from 'lucide-react';
 import { type ReactNode, useActionState, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,7 @@ interface ActionFormProps {
   hidden?: Record<string, string>;
   submitLabel: string;
   pendingLabel?: string;
-  variant?: 'default' | 'outline' | 'ghost';
+  variant?: 'default' | 'outline' | 'ghost' | 'secondary' | 'destructive';
   children?: ReactNode;
   className?: string;
   /** Inline forms (a row of controls) vs stacked forms. */
@@ -47,21 +47,23 @@ export function ActionForm({
         {children}
         <Button
           type="submit"
-          size="sm"
+          size="default"
           variant={variant}
           disabled={pending}
-          className={inline ? '' : 'self-start'}
+          className={inline ? 'h-10' : 'self-start'}
         >
           {pending ? (pendingLabel ?? `${submitLabel}…`) : submitLabel}
         </Button>
       </div>
       {state.error ? (
-        <p role="alert" data-testid="action-error" className="text-xs text-destructive">
-          {state.error}
+        <p role="alert" className="flex items-start gap-1.5 text-sm text-destructive">
+          <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span data-testid="action-error">{state.error}</span>
         </p>
       ) : null}
       {state.ok && state.message && !quiet ? (
-        <p role="status" className="text-xs text-success">
+        <p role="status" className="flex items-start gap-1.5 text-sm text-success">
+          <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden />
           {state.message}
         </p>
       ) : null}
@@ -80,7 +82,7 @@ export function CopyField({ value }: { value: string }) {
         aria-label="Invitation link"
         data-testid="invite-url"
         onFocus={(event) => event.currentTarget.select()}
-        className="h-8 min-w-0 flex-1 rounded-md border bg-muted px-2 font-mono text-xs"
+        className="h-9 min-w-0 flex-1 rounded-lg border bg-muted px-3 font-mono text-xs"
       />
       <Button
         type="button"

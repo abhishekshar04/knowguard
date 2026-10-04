@@ -29,7 +29,9 @@ function Stat({ label, value, detail }: { label: string; value: string; detail?:
     <Card className="gap-1 py-4">
       <CardContent className="flex flex-col gap-0.5">
         <span className="text-xs text-muted-foreground">{label}</span>
-        <span className="text-2xl font-semibold tabular-nums">{value}</span>
+        <span className="font-display text-[1.75rem] leading-none font-bold tracking-tight tabular-nums">
+          {value}
+        </span>
         {detail ? <span className="text-xs text-muted-foreground">{detail}</span> : null}
       </CardContent>
     </Card>
@@ -58,15 +60,17 @@ export default async function AnalyticsPage({
         title="Analytics"
         description="Usage of your organization's knowledge base, from the audit log. Counts only: no queries, questions or content."
         actions={
-          <nav aria-label="Period" className="flex gap-1 rounded-md border p-0.5 text-sm">
+          <nav aria-label="Period" className="flex gap-1 rounded-full border bg-card p-1 text-sm shadow-xs">
             {PERIODS.map((period) => (
               <Link
                 key={period}
                 href={`/admin/analytics?days=${period}`}
                 aria-current={period === days ? 'page' : undefined}
                 className={cn(
-                  'rounded px-2.5 py-1',
-                  period === days ? 'bg-accent font-medium' : 'text-muted-foreground hover:text-foreground',
+                  'rounded-full px-3.5 py-1.5 transition-colors',
+                  period === days
+                    ? 'bg-ink font-medium text-white'
+                    : 'text-muted-foreground hover:text-foreground',
                 )}
               >
                 {period} days

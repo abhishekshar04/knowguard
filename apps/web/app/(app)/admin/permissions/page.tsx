@@ -33,7 +33,7 @@ export default async function PermissionsPage() {
           <table className="w-full text-sm" data-testid="permission-matrix">
             <thead className="border-b text-xs text-muted-foreground">
               <tr>
-                <th className="px-5 py-3 text-left font-medium uppercase tracking-wide">Permission</th>
+                <th className="px-5 py-3 text-left font-medium">Permission</th>
                 {roles.map((role) => (
                   <th key={role.id} scope="col" className="px-3 py-3 text-center font-medium">
                     {role.name}

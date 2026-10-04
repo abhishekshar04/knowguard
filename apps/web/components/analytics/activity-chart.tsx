@@ -47,7 +47,7 @@ export function ActivityChart({
                 <span
                   tabIndex={0}
                   aria-label={`${formatDay(day.date)}: ${value} ${title.toLowerCase()}`}
-                  className="block w-full rounded-t-[4px] bg-primary/80 outline-none transition-colors group-hover:bg-primary focus-visible:ring-2 focus-visible:ring-ring"
+                  className="block w-full rounded-t-[4px] bg-signal/75 outline-none transition-colors group-hover:bg-signal focus-visible:ring-2 focus-visible:ring-ring"
                   style={{ height: `${height}%`, minHeight: value === 0 ? 0 : 2 }}
                 />
                 {/* Hit target taller than the mark, so small bars are easy to hover. */}

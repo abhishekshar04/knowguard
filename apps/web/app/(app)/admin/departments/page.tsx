@@ -3,7 +3,8 @@ import type { Metadata } from 'next';
 
 import { ActionForm } from '@/components/admin/action-form';
 import { GroupCard } from '@/components/admin/group-card';
-import { AccessDenied, PageHeader } from '@/components/page-header';
+import { Building2 } from 'lucide-react';
+import { AccessDenied, EmptyState, PageHeader } from '@/components/page-header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -61,7 +62,12 @@ export default async function DepartmentsPage() {
         </Card>
       ) : null}
 
-      {departments.length === 0 ? <p className="text-sm text-muted-foreground">No departments yet.</p> : null}
+      {departments.length === 0 ? (
+        <EmptyState icon={Building2} title="No departments yet">
+          Departments group people, like Engineering or Finance. Documents can be shared with a whole
+          department.
+        </EmptyState>
+      ) : null}
       <div className="grid gap-4 md:grid-cols-2">
         {departments.map((department) => (
           <GroupCard

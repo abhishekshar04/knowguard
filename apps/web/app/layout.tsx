@@ -4,6 +4,8 @@ import type { ReactNode } from 'react';
 
 import './globals.css';
 
+import { body, display } from '@/components/landing/fonts';
+
 export const metadata: Metadata = {
   title: { default: 'KnowGuard', template: '%s · KnowGuard' },
   description: 'Permission-aware enterprise knowledge platform',
@@ -17,7 +19,7 @@ export const metadata: Metadata = {
 export default async function RootLayout({ children }: { children: ReactNode }) {
   await connection();
   return (
-    <html lang="en">
+    <html lang="en" className={`${display.variable} ${body.variable}`}>
       <body>{children}</body>
     </html>
   );

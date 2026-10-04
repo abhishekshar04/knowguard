@@ -24,7 +24,7 @@ export function Highlight({ text, terms }: { text: string; terms: string[] }) {
     <>
       {parts.map((part, index) =>
         index % 2 === 1 ? (
-          <mark key={index} className="rounded-sm bg-amber-200/70 px-0.5 text-inherit dark:bg-amber-500/30">
+          <mark key={index} className="rounded-sm bg-amber-100 px-0.5 text-inherit">
             {part}
           </mark>
         ) : (

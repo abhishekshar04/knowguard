@@ -8,6 +8,7 @@ import type {
 import type { Metadata } from 'next';
 
 import { ActionForm } from '@/components/admin/action-form';
+import { timeAgo } from '@/components/documents/document-labels';
 import { AccessDenied, PageHeader } from '@/components/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +18,7 @@ import { Select } from '@/components/ui/select';
 import { apiRequest } from '@/lib/api';
 import { can } from '@/lib/permissions';
 import { getSessionToken, requireUser } from '@/lib/session';
+import { cn, initials } from '@/lib/utils';
 
 import {
   inviteMemberAction,
@@ -94,7 +96,7 @@ export default async function UsersPage() {
       <Card className="py-0">
         <div className="overflow-x-auto">
           <table className="w-full text-sm" data-testid="members-table">
-            <thead className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+            <thead className="border-b bg-muted/60 text-left text-xs text-muted-foreground">
               <tr>
                 <th className="px-5 py-3 font-medium">Member</th>
                 <th className="px-3 py-3 font-medium">Status</th>
@@ -144,12 +146,26 @@ function MemberRow({
   const hidden = { userId: member.id };
   const groups = [...member.departments, ...member.teams].map((group) => group.name);
   return (
-    <tr data-testid={`member-${member.email}`} className="align-top">
+    <tr data-testid={`member-${member.email}`} className="align-middle transition-colors hover:bg-accent/40">
       <td className="px-5 py-3">
-        <p className="font-medium">
-          {member.name} {isSelf ? <span className="text-xs text-muted-foreground">(you)</span> : null}
-        </p>
-        <p className="text-xs text-muted-foreground">{member.email}</p>
+        <div className="flex items-center gap-3">
+          <span
+            aria-hidden
+            className={cn(
+              'flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+              isSelf ? 'bg-ink text-white' : 'bg-muted text-foreground',
+            )}
+          >
+            {initials(member.name)}
+          </span>
+          <div className="min-w-0">
+            <p className="font-medium">
+              {member.name}{' '}
+              {isSelf ? <span className="text-xs font-normal text-muted-foreground">(you)</span> : null}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">{member.email}</p>
+          </div>
+        </div>
       </td>
       <td className="px-3 py-3">
         <Badge variant={STATUS_VARIANT[member.status]} data-testid="member-status">
@@ -179,8 +195,11 @@ function MemberRow({
         )}
       </td>
       <td className="px-3 py-3 text-xs text-muted-foreground">{groups.join(', ') || '—'}</td>
-      <td className="px-3 py-3 text-xs text-muted-foreground">
-        {member.lastLoginAt ? dateFormat.format(new Date(member.lastLoginAt)) : 'Never'}
+      <td
+        className="px-3 py-3 text-xs whitespace-nowrap text-muted-foreground"
+        title={member.lastLoginAt ? dateFormat.format(new Date(member.lastLoginAt)) : undefined}
+      >
+        {member.lastLoginAt ? timeAgo(member.lastLoginAt) : 'Never'}
       </td>
       <td className="px-5 py-3">
         {member.manageable ? (

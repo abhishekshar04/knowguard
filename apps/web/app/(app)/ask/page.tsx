@@ -4,16 +4,16 @@ import type {
   ConversationListResponse,
   DocumentDetails,
 } from '@knowguard/types';
-import { MessageSquare, Plus } from 'lucide-react';
+import { ChevronDown, CircleAlert, MessageSquare, Plus } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { ActionForm } from '@/components/admin/action-form';
 import { AskView } from '@/components/ask/ask-view';
-import { AccessDenied, PageHeader } from '@/components/page-header';
+import { timeAgo } from '@/components/documents/document-labels';
+import { AccessDenied } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
 import { ApiError, apiRequest } from '@/lib/api';
 import { can } from '@/lib/permissions';
 import { getSessionToken, requireUser } from '@/lib/session';
@@ -56,84 +56,125 @@ export default async function AskPage({
   // Someone else's conversation looks exactly like a missing one.
   if (conversationId && !conversation) notFound();
 
+  const newHref = documentId ? `/ask?document=${documentId}` : '/ask';
+  const list = (testId?: string) => (
+    <nav aria-label="Conversations" className="flex flex-col gap-0.5" data-testid={testId}>
+      {conversations.length === 0 ? (
+        <p className="px-3 py-2 text-sm text-muted-foreground">No conversations yet.</p>
+      ) : (
+        conversations.map((c) => (
+          <Link
+            key={c.id}
+            href={`/ask?c=${c.id}`}
+            aria-current={c.id === conversationId ? 'page' : undefined}
+            className={cn(
+              'flex flex-col rounded-lg px-3 py-2 text-sm transition-colors hover:bg-accent',
+              c.id === conversationId && 'bg-ink/[0.06]',
+            )}
+          >
+            <span className={cn('truncate', c.id === conversationId && 'font-medium')}>{c.title}</span>
+            <span className="text-xs text-muted-foreground">{timeAgo(c.updatedAt)}</span>
+          </Link>
+        ))
+      )}
+    </nav>
+  );
+
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        title="Ask AI"
-        description="Answers come only from documents you are allowed to read, with citations to the exact passages."
-        actions={
-          <Button asChild variant="outline" size="sm">
-            <Link href={documentId ? `/ask?document=${documentId}` : '/ask'}>
-              <Plus aria-hidden />
-              New conversation
-            </Link>
-          </Button>
-        }
-      />
+    <div className="grid gap-6 lg:grid-cols-[16rem_minmax(0,1fr)]">
+      <aside className="hidden flex-col gap-3 lg:sticky lg:top-20 lg:flex lg:max-h-[calc(100dvh-7rem)]">
+        <Button asChild className="w-full justify-start">
+          <Link href={newHref}>
+            <Plus aria-hidden />
+            New conversation
+          </Link>
+        </Button>
+        <p className="px-3 pt-2 text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">
+          Recent
+        </p>
+        <div className="-mx-1 overflow-y-auto px-1">{list('conversation-list')}</div>
+      </aside>
 
-      <div className="grid gap-6 lg:grid-cols-[16rem_1fr]">
-        <nav aria-label="Conversations" className="flex flex-col gap-1" data-testid="conversation-list">
-          {conversations.length === 0 ? (
-            <p className="px-2 text-sm text-muted-foreground">No conversations yet.</p>
-          ) : (
-            conversations.map((c) => (
-              <Link
-                key={c.id}
-                href={`/ask?c=${c.id}`}
-                aria-current={c.id === conversationId ? 'page' : undefined}
-                className={cn(
-                  'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent',
-                  c.id === conversationId && 'bg-accent font-medium',
-                )}
-              >
-                <MessageSquare className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-                <span className="truncate">{c.title}</span>
-              </Link>
-            ))
-          )}
-        </nav>
-
-        <div className="flex min-w-0 flex-col gap-4">
-          {!status.available ? (
-            <Card data-testid="ai-unavailable">
-              <CardContent className="text-sm">
-                <p className="font-medium">The AI assistant is not configured.</p>
-                <p className="text-muted-foreground">
-                  An administrator needs to set up an AI provider. Search still works.
-                </p>
-              </CardContent>
-            </Card>
-          ) : null}
-          {documentId && !document ? (
-            <p role="alert" className="text-sm text-destructive">
-              That document was not found. Questions will use all documents you can read.
+      <section className="flex min-w-0 flex-col gap-4" aria-labelledby="ask-title">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <h1
+              id="ask-title"
+              className="font-display text-[1.75rem] leading-[1.1] font-bold tracking-[-0.03em]"
+            >
+              Ask AI
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Answers come only from documents you are allowed to read, with citations to the exact passages.
             </p>
-          ) : null}
+          </div>
+          <div className="flex gap-2">
+            {conversation ? (
+              <ActionForm
+                action={deleteConversationAction}
+                hidden={{ conversationId: conversation.id }}
+                submitLabel="Delete conversation"
+                pendingLabel="Deleting…"
+                variant="ghost"
+                inline
+                quiet
+              />
+            ) : null}
+            <Button asChild variant="outline" size="sm" className="lg:hidden">
+              <Link href={newHref}>
+                <Plus aria-hidden />
+                New
+              </Link>
+            </Button>
+          </div>
+        </header>
 
-          <AskView
-            key={conversation?.id ?? `new-${documentId ?? ''}`}
-            conversationId={conversation?.id ?? null}
-            initialMessages={conversation?.messages ?? []}
-            document={
-              document ? { id: document.id, title: document.title, ready: document.status === 'READY' } : null
-            }
-            disabled={!status.available}
-          />
+        {conversations.length > 0 ? (
+          <details className="group rounded-xl border bg-card lg:hidden">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+              <span className="flex items-center gap-2">
+                <MessageSquare className="size-4 text-muted-foreground" aria-hidden />
+                Your conversations ({conversations.length})
+              </span>
+              <ChevronDown
+                className="size-4 text-muted-foreground transition-transform group-open:rotate-180"
+                aria-hidden
+              />
+            </summary>
+            <div className="border-t p-1.5">{list()}</div>
+          </details>
+        ) : null}
 
-          {conversation ? (
-            <ActionForm
-              action={deleteConversationAction}
-              hidden={{ conversationId: conversation.id }}
-              submitLabel="Delete conversation"
-              pendingLabel="Deleting…"
-              variant="ghost"
-              inline
-              quiet
-              className="self-end"
-            />
-          ) : null}
-        </div>
-      </div>
+        {!status.available ? (
+          <div
+            data-testid="ai-unavailable"
+            className="flex items-start gap-3 rounded-xl border border-warning/25 bg-warning/[0.07] px-4 py-3 text-sm"
+          >
+            <CircleAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+            <div>
+              <p className="font-medium">The AI assistant is not configured.</p>
+              <p className="text-muted-foreground">
+                An administrator needs to set up an AI provider. Search still works.
+              </p>
+            </div>
+          </div>
+        ) : null}
+        {documentId && !document ? (
+          <p role="alert" className="text-sm text-destructive">
+            That document was not found. Questions will use all documents you can read.
+          </p>
+        ) : null}
+
+        <AskView
+          key={conversation?.id ?? `new-${documentId ?? ''}`}
+          conversationId={conversation?.id ?? null}
+          initialMessages={conversation?.messages ?? []}
+          document={
+            document ? { id: document.id, title: document.title, ready: document.status === 'READY' } : null
+          }
+          disabled={!status.available}
+        />
+      </section>
     </div>
   );
 }

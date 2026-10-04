@@ -28,8 +28,8 @@ export function VisibilityFields({
     ['Roles (for "Roles")', options.roles],
   ];
   return (
-    <div className="flex flex-wrap gap-3">
-      <div className="flex flex-col gap-1.5">
+    <div className="grid gap-4 md:grid-cols-2">
+      <div className="flex min-w-0 flex-col gap-1.5">
         <Label htmlFor={`${idPrefix}-visibility`}>Who can read it</Label>
         <Select id={`${idPrefix}-visibility`} name="visibility" defaultValue={visibility}>
           {VISIBILITY_OPTIONS.map((option) => (
@@ -39,14 +39,14 @@ export function VisibilityFields({
           ))}
         </Select>
       </div>
-      <div className="flex min-w-60 flex-1 flex-col gap-1.5">
+      <div className="flex min-w-0 flex-col gap-1.5">
         <Label htmlFor={`${idPrefix}-audience`}>Audience (for Teams / Departments / Roles)</Label>
         <Select
           id={`${idPrefix}-audience`}
           name="audienceIds"
           multiple
           defaultValue={selected}
-          className="h-24"
+          className="kg-select-multi h-28 bg-none py-1.5"
         >
           {groups.map(([label, refs]) =>
             refs.length > 0 ? (

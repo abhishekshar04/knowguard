@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { apiRequest } from '@/lib/api';
 import { can } from '@/lib/permissions';
 import { getSessionToken, requireUser } from '@/lib/session';
+import { initials } from '@/lib/utils';
 
 import { renameOrganizationAction } from '../admin/actions';
 
@@ -23,14 +24,26 @@ export default async function SettingsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Settings" />
+      <PageHeader title="Settings" description="Your account and your organization." />
 
       <Card>
         <CardHeader>
           <CardTitle>Your account</CardTitle>
         </CardHeader>
-        <CardContent>
-          <dl className="grid gap-3 text-sm sm:grid-cols-3">
+        <CardContent className="flex flex-col gap-5">
+          <div className="flex items-center gap-4">
+            <span
+              aria-hidden
+              className="flex size-14 shrink-0 items-center justify-center rounded-full bg-ink font-display text-lg font-semibold text-white"
+            >
+              {initials(me.user.name)}
+            </span>
+            <div className="min-w-0">
+              <p className="font-display text-lg font-semibold tracking-tight">{me.user.name}</p>
+              <p className="truncate text-sm text-muted-foreground">{me.user.email}</p>
+            </div>
+          </div>
+          <dl className="grid gap-4 rounded-xl border bg-muted/40 p-4 text-sm sm:grid-cols-3">
             <div>
               <dt className="text-muted-foreground">Name</dt>
               <dd className="font-medium">{me.user.name}</dd>

@@ -1,8 +1,10 @@
 import type { TeamDetails, TeamListResponse } from '@knowguard/types';
+import { UsersRound } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { AccessDenied, PageHeader } from '@/components/page-header';
+import { AccessDenied, EmptyState, PageHeader } from '@/components/page-header';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiRequest } from '@/lib/api';
 import { can } from '@/lib/permissions';
@@ -45,19 +47,21 @@ export default async function TeamsPage() {
         description="Team membership will decide which team-restricted documents you can read."
         actions={
           can(me, 'team.manage') ? (
-            <Link href="/admin/teams" className="text-sm font-medium underline-offset-4 hover:underline">
-              Manage teams
-            </Link>
+            <Button asChild variant="outline">
+              <Link href="/admin/teams">Manage teams</Link>
+            </Button>
           ) : null
         }
       />
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Your teams</h2>
+        <h2 className="font-display text-lg font-semibold tracking-tight">Your teams</h2>
         {mine.length === 0 ? (
-          <p className="text-sm text-muted-foreground" data-testid="no-teams">
-            You are not in any team yet.
-          </p>
+          <EmptyState icon={UsersRound} title="You are not in any team yet">
+            <span data-testid="no-teams">
+              An administrator can add you to a team. Team documents become readable once you join.
+            </span>
+          </EmptyState>
         ) : (
           <div className="grid gap-4 md:grid-cols-2">
             {mine.map((team) => (
@@ -69,7 +73,7 @@ export default async function TeamsPage() {
 
       {others.length > 0 ? (
         <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Other teams</h2>
+          <h2 className="font-display text-lg font-semibold tracking-tight">Other teams</h2>
           <div className="grid gap-4 md:grid-cols-2">
             {others.map((team) => (
               <TeamCard key={team.id} team={team} />
