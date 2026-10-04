@@ -6,7 +6,7 @@ Permission-aware enterprise knowledge platform. The core invariant:
 
 Authorization happens **before** retrieval and context construction — never by asking an LLM to withhold information.
 
-**Status: Phase 9 (audit and administration).** Security-relevant activity is recorded in an append-only audit log (enforced by the database): document views, downloads and changes, sharing and permission changes, membership and role changes, sign-ins, every access denial, searches and AI questions. It never records content, queries, questions or secrets. Administrators review it at Admin → Audit Logs, see usage at Admin → Analytics and manage documents at Admin → Documents. Titles of documents an administrator cannot read stay hidden everywhere. Earlier phases provide tenant isolation, the authorization engine, documents, local ingestion, hybrid search and Ask AI with citations. Next: security hardening and regression suites (Phase 10).
+**Status: Phase 10 (security hardening), all phases complete.** Automatic security regression suites cover every API route: unauthenticated requests are refused, missing capabilities are refused for every role, and another organization's IDs behave like missing ones. The web app has a strict per-request Content-Security-Policy, hardened headers, lint rules against risky patterns, and a browser-test guard that fails on CSP violations or page errors. AI prompts are hardened against injection tricks (look-alike characters, invisible characters, chat-template tokens). CI also scans for committed secrets, vulnerable dependencies and server configuration in the browser bundle. See [ADR 0013](docs/adr/0013-security-hardening-and-regression-suites.md).
 
 To enable Ask AI, set `OPENAI_API_KEY` in your local `.env` (never in git). For Google Gemini, also set `OPENAI_BASE_URL` and `OPENAI_MODEL` as shown in [.env.example](.env.example). Without it, everything else works and Ask AI reports that it is not configured.
 
@@ -107,6 +107,7 @@ All configuration lives in the repo-root `.env` (template: [.env.example](.env.e
 | `AI_PROVIDER`, `AI_MAX_OUTPUT_TOKENS`                                     | api                    | `openai` \| `none` \| `fake` (tests; default: openai if a key is set) and the per-answer token cap (default 800) |
 | `WORKER_CONCURRENCY`                                                      | worker                 | Parallel ingestion jobs (default 2)                                                                              |
 | `QUEUE_PREFIX`                                                            | api, worker            | BullMQ key prefix; environments sharing a Redis must differ                                                      |
+| `API_RATE_LIMIT_PER_MINUTE`, `API_WRITE_RATE_LIMIT_PER_MINUTE`            | api                    | Per-member request budget for the whole API (default 600 / 120 per minute)                                       |
 | `SEED_USER_PASSWORD`                                                      | seed                   | Password for seeded demo users (≥ 12 chars)                                                                      |
 
 ## Architecture decisions
@@ -125,6 +126,7 @@ See [docs/adr](docs/adr):
 10. [Permission-aware hybrid search](docs/adr/0010-permission-aware-hybrid-search.md)
 11. [Ask AI: grounded answers from authorized passages](docs/adr/0011-ask-ai.md)
 12. [Audit log and analytics](docs/adr/0012-audit-log-and-analytics.md)
+13. [Security hardening and regression suites](docs/adr/0013-security-hardening-and-regression-suites.md)
 
 ## Deploying: required
 

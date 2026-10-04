@@ -13,10 +13,13 @@ interface FormFieldProps extends ComponentProps<typeof Input> {
 export function FormField({ name, label, error, hint, ...inputProps }: FormFieldProps) {
   const describedBy = error ? `${name}-error` : hint ? `${name}-hint` : undefined;
   return (
-    <div className="flex flex-col gap-1.5">
-      <Label htmlFor={name}>{label}</Label>
+    <div className="shorter:gap-1 flex flex-col gap-1.5">
+      <Label htmlFor={name} className="text-ink">
+        {label}
+      </Label>
       <Input
         id={name}
+        className="border-rule short:h-10 shorter:h-9 h-11 bg-white focus-visible:border-signal focus-visible:ring-signal/20"
         name={name}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy}

@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { AcceptInvitationForm } from '@/components/auth/accept-invitation-form';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { AuthPanel } from '@/components/auth/auth-panel';
 import { ApiError, apiRequest } from '@/lib/api';
 
 export const metadata: Metadata = {
@@ -25,38 +25,37 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
 
   if (!preview) {
     return (
-      <Card data-testid="invitation-invalid">
-        <CardHeader>
-          <CardTitle className="text-xl">
-            {unavailable ? 'Temporarily unavailable' : 'Invitation not valid'}
-          </CardTitle>
-          <CardDescription>
-            {unavailable
-              ? 'KnowGuard is temporarily unavailable. Please try this link again shortly.'
-              : 'This invitation link is invalid or has expired. Ask your administrator for a new one.'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Link href="/login" className="text-sm font-medium underline-offset-4 hover:underline">
-            Go to sign in
-          </Link>
-        </CardContent>
-      </Card>
+      <AuthPanel
+        data-testid="invitation-invalid"
+        title={unavailable ? 'Temporarily unavailable' : 'Invitation not valid'}
+        description={
+          unavailable
+            ? 'KnowGuard is temporarily unavailable. Please try this link again shortly.'
+            : 'This invitation link is invalid or has expired. Ask your administrator for a new one.'
+        }
+      >
+        <Link
+          href="/login"
+          className="text-ink text-sm font-medium underline decoration-rule underline-offset-4 hover:decoration-ink"
+        >
+          Go to sign in
+        </Link>
+      </AuthPanel>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl">Join {preview.organizationName}</CardTitle>
-        <CardDescription>
-          You were invited as <span className="font-medium text-foreground">{preview.email}</span>. Choose a
-          password to activate your account.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <AcceptInvitationForm token={token} defaultName={preview.name} />
-      </CardContent>
-    </Card>
+    <AuthPanel
+      data-organization={preview.organizationName}
+      title={<>Join {preview.organizationName}</>}
+      description={
+        <>
+          You were invited as <span className="text-ink font-medium">{preview.email}</span>. Choose a password
+          to activate your account.
+        </>
+      }
+    >
+      <AcceptInvitationForm token={token} defaultName={preview.name} />
+    </AuthPanel>
   );
 }

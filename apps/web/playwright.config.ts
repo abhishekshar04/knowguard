@@ -26,6 +26,12 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
+  // Server actions and API round trips run against four local servers plus GPU-emulated WebGL
+  // pages in parallel; 10s keeps assertions robust under that load without hiding real failures.
+  expect: { timeout: 10_000 },
+  // Multi-step journeys (invite, sign in, act as two users) take ~12s on an idle machine but up
+  // to ~3x that on a loaded laptop or a small CI runner; 60s leaves headroom without hiding hangs.
+  timeout: 60_000,
   use: {
     baseURL: WEB_URL,
     trace: 'retain-on-failure',

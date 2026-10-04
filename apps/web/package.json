@@ -8,26 +8,31 @@
     "start": "dotenv -e ../../.env -- next start --port 3000",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test:browser": "dotenv -e ../../.env -- playwright test"
+    "test:browser": "dotenv -e ../../.env -- playwright test",
+    "check:bundle": "node scripts/check-client-bundle.mjs"
   },
   "dependencies": {
     "@knowguard/types": "workspace:*",
     "@knowguard/validation": "workspace:*",
     "@radix-ui/react-slot": "1.3.3",
+    "@react-three/fiber": "9.8.1",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
+    "lenis": "1.3.26",
     "lucide-react": "1.48.0",
     "next": "16.3.7",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "server-only": "0.0.1",
-    "tailwind-merge": "3.7.0"
+    "tailwind-merge": "3.7.0",
+    "three": "0.186.1"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "@tailwindcss/postcss": "4.3.3",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "@types/three": "0.186.0",
     "dotenv-cli": "11.0.0",
     "eslint-config-next": "16.3.7",
     "postcss": "8.5.28",

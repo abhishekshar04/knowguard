@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 import { inviteEmployee, isolateClientIp, registerViaUi, uploadViaUi } from './helpers';
 
@@ -7,6 +7,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('upload, preview, download, and organization-wide reading', async ({ page, browser }) => {
+  test.setTimeout(120_000); // waits for indexing (up to 60s) before reading
   await registerViaUi(page, { organizationName: 'Docs Co' });
   await expect(page).toHaveURL(/\/dashboard$/);
   const reader = await inviteEmployee(page, browser, 'Rita Reader');
@@ -41,6 +42,7 @@ test('upload, preview, download, and organization-wide reading', async ({ page, 
 });
 
 test('private documents stay hidden until shared, and a deny revokes access', async ({ page, browser }) => {
+  test.setTimeout(120_000); // invites a member, uploads and waits for indexing, then shares twice
   await registerViaUi(page, { organizationName: 'Private Co' });
   await expect(page).toHaveURL(/\/dashboard$/);
   const reader = await inviteEmployee(page, browser, 'Pat Private');
@@ -101,6 +103,7 @@ test('unsupported files are rejected with a clear message', async ({ page }) => 
 });
 
 test('a document that cannot be read ends up FAILED with a reason and a retry button', async ({ page }) => {
+  test.setTimeout(120_000); // waits for the worker to give up (up to 60s)
   await registerViaUi(page, { organizationName: 'Broken Co' });
   await expect(page).toHaveURL(/\/dashboard$/);
   await page.goto('/documents');
@@ -122,6 +125,7 @@ test('a document that cannot be read ends up FAILED with a reason and a retry bu
 });
 
 test('search finds indexed documents the user may read — and nothing else', async ({ page, browser }) => {
+  test.setTimeout(120_000); // indexes two documents (up to 60s each)
   await registerViaUi(page, { organizationName: 'Search Co' });
   await expect(page).toHaveURL(/\/dashboard$/);
   const reader = await inviteEmployee(page, browser, 'Sam Searcher');

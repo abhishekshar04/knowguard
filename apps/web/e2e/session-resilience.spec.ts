@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 import { OFFLINE_WEB_PORT } from '../playwright.config';
 import { loginViaUi, PASSWORD, registerViaUi, SESSION_COOKIE, uniqueEmail, isolateClientIp } from './helpers';

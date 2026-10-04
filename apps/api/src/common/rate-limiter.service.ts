@@ -28,8 +28,8 @@ export class RateLimiterService {
    * RateLimitedException once the limit is exceeded. Because counting happens before the
    * guarded work, concurrent requests cannot overshoot the limit.
    */
-  async consume(key: string, rule: RateLimitRule): Promise<void> {
-    const [count, ttl] = await this.run(async () => {
+  async consume(key: string, rule: RateLimitRule, options: { failOpen?: boolean } = {}): Promise<void> {
+    const [count, ttl] = await this.run(options.failOpen ?? false, async () => {
       const results = await this.redis.client
         .multi()
         .incr(KEY_PREFIX + key)
@@ -43,14 +43,19 @@ export class RateLimiterService {
   }
 
   async reset(key: string): Promise<void> {
-    await this.run(() => this.redis.client.del(KEY_PREFIX + key));
+    await this.run(false, () => this.redis.client.del(KEY_PREFIX + key));
   }
 
-  private async run<T>(operation: () => Promise<T>): Promise<T> {
+  /**
+   * `failOpen` is for broad limits (every API request) where availability matters more than the
+   * limit itself; brute-force limits (login, registration) always fail closed.
+   */
+  private async run<T>(failOpen: boolean, operation: () => Promise<T>): Promise<T | readonly [0, 0]> {
     try {
       return await operation();
     } catch (error) {
       this.logger.error(`Rate limiter unavailable: ${(error as Error).message}`);
+      if (failOpen) return [0, 0] as const;
       throw new ApiException(
         'SERVICE_UNAVAILABLE',
         'The service is temporarily unavailable. Please try again shortly.',

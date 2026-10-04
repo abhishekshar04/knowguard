@@ -42,4 +42,18 @@ describe('RateLimiterService', () => {
     expect((error as ApiException).getStatus()).toBe(503);
     expect((error as ApiException).message).not.toContain('Connection');
   });
+
+  it('fails OPEN when asked to (broad API limits), still enforcing the limit when Redis works', async () => {
+    const down = limiterWith(async () => {
+      throw new Error('Connection is closed.');
+    });
+    await expect(down.consume('k', rule, { failOpen: true })).resolves.toBeUndefined();
+
+    const over = limiterWith(async () => [
+      [null, 4],
+      [null, 1],
+      [null, 30],
+    ]);
+    await expect(over.consume('k', rule, { failOpen: true })).rejects.toBeInstanceOf(RateLimitedException);
+  });
 });
