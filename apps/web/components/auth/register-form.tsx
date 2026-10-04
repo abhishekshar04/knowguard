@@ -12,7 +12,7 @@ export function RegisterForm() {
   const [state, action, pending] = useActionState<AuthFormState, FormData>(registerAction, {});
 
   return (
-    <form action={action} className="flex flex-col gap-4" noValidate>
+    <form action={action} className="short:gap-3 shorter:gap-2.5 flex flex-col gap-4" noValidate>
       <FormError message={state.error} />
       <FormField
         name="name"
@@ -50,7 +50,11 @@ export function RegisterForm() {
         hint="You'll be the owner of this organization."
         error={state.fieldErrors?.organizationName}
       />
-      <Button type="submit" disabled={pending}>
+      <Button
+        type="submit"
+        disabled={pending}
+        className="bg-ink hover:bg-ink/85 short:h-10 mt-2 h-11 rounded-full"
+      >
         {pending ? 'Creating…' : 'Create organization'}
       </Button>
       <p className="text-center text-sm text-muted-foreground">

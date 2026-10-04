@@ -11,7 +11,7 @@ export function AcceptInvitationForm({ token, defaultName }: { token: string; de
   const [state, action, pending] = useActionState<AuthFormState, FormData>(acceptInvitationAction, {});
 
   return (
-    <form action={action} className="flex flex-col gap-4" noValidate>
+    <form action={action} className="short:gap-3 shorter:gap-2.5 flex flex-col gap-4" noValidate>
       <FormError message={state.error} />
       <input type="hidden" name="token" value={token} />
       <FormField
@@ -31,7 +31,11 @@ export function AcceptInvitationForm({ token, defaultName }: { token: string; de
         hint="At least 12 characters. A passphrase works well."
         error={state.fieldErrors?.password}
       />
-      <Button type="submit" disabled={pending}>
+      <Button
+        type="submit"
+        disabled={pending}
+        className="bg-ink hover:bg-ink/85 short:h-10 mt-2 h-11 rounded-full"
+      >
         {pending ? 'Joining…' : 'Join organization'}
       </Button>
     </form>

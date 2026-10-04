@@ -41,7 +41,9 @@ export function contentSecurityPolicy(nonce: string, options: { dev: boolean; ht
  */
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  const isPublic = PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+  // "/" is the public landing page (exact match only: it must not make every path public).
+  const isPublic =
+    pathname === '/' || PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
   if (!isPublic && !request.cookies.has(sessionCookieName())) {
     const login = new URL('/login', request.url);
     if (pathname !== '/') login.searchParams.set('next', `${pathname}${search}`);

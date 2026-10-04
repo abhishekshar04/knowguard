@@ -30,12 +30,12 @@ test('pages carry a strict, per-request Content-Security-Policy and hardening he
   ]) {
     expect(policy).toContain(directive);
   }
-  // Next.js applied the nonce to its own scripts (otherwise nothing would hydrate).
-  const scripts = await page
-    .locator('script[src]')
-    .evaluateAll((elements) => elements.map((element) => (element as HTMLScriptElement).nonce));
+  // Next.js applied the nonce to every script it renders (otherwise nothing would hydrate).
+  // Chunks loaded later by those scripts (e.g. the 3D scene) are trusted via 'strict-dynamic'.
+  const html = (await first?.text()) ?? '';
+  const scripts = [...html.matchAll(/<script\b[^>]*>/g)].map((match) => match[0]);
   expect(scripts.length).toBeGreaterThan(0);
-  expect(scripts.every((value) => value === nonce)).toBe(true);
+  expect(scripts.every((tag) => tag.includes(`nonce="${nonce}"`))).toBe(true);
 
   const headers = first?.headers() ?? {};
   expect(headers).toMatchObject({

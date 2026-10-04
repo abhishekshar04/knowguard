@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 import { LoginForm } from '@/components/auth/login-form';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { AuthPanel } from '@/components/auth/auth-panel';
 import { getCurrentUserIfAvailable, safeRedirectPath } from '@/lib/session';
 
 export const metadata: Metadata = { title: 'Sign in' };
@@ -12,14 +12,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const { next } = await searchParams;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-xl">Sign in</CardTitle>
-        <CardDescription>Access your organization&apos;s knowledge.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <LoginForm next={next ? safeRedirectPath(next) : undefined} />
-      </CardContent>
-    </Card>
+    <AuthPanel title="Sign in" description="Access your organization’s knowledge.">
+      <LoginForm next={next ? safeRedirectPath(next) : undefined} />
+    </AuthPanel>
   );
 }
